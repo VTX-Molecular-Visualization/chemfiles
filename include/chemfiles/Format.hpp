@@ -18,9 +18,36 @@
 namespace chemfiles {
 class Frame;
 class MemoryBuffer;
+class FormatMetadata;
+
+/// Get the metadata associated with `Format`.
+///
+/// The metadata should be a reference to static memory.
+///
+/// In order to implement a new format, one should specialise this function
+/// with the corresponding format:
+///
+/// ```cpp
+/// class MyFormat: public Format {
+///     // ...
+/// };
+///
+/// namespace chemfiles {
+///     template<> const FormatMetadata& format_metadata<MyFormat>() {
+///         static FormatMetadata metadata;
+///         metadata.name = "MyFormat";
+///         metadata.extension = ".mtf";
+///         return metadata;
+///     }
+/// }
+/// ```
+template<class Format>
+const FormatMetadata& format_metadata() {
+    throw FormatError("format_metadata is not implemented for this format");
+}
 
 /// The `Format` class defines the interface to implement in order to add a new
-/// format to chemfiles. For text-based formats, it might be simpler to 
+/// format to chemfiles. For text-based formats, it might be simpler to
 /// implement the `TextFormat` interface instead.
 ///
 /// It is possible to implement only one of `Format::read`; `Format::read_step`
@@ -60,7 +87,7 @@ public:
     /// @throw FormatError if the file does not follow the format
     /// @throw FileError if their is an OS error while reading the file
     ///
-    /// @param frame The frame to be writen
+    /// @param frame The frame to be written
     virtual void write(const Frame& frame);
 
     /// Get the number of frames in the associated file. This function can be
@@ -69,88 +96,6 @@ public:
     /// @return The number of frames
     virtual size_t nsteps() = 0;
 };
-
-/// Metadata associated with a format.
-///
-/// This class uses the builder patern, chaining functions calls to set the
-/// class attributes:
-///
-/// ```cpp
-/// auto meta = FormatInfo("MyFormat").with_extension(".mft").description(
-///     "some description"
-/// );
-/// ```
-class CHFL_EXPORT FormatInfo {
-public:
-    /// Create a `FormatInfo` with the given `name`.
-    ///
-    /// @throws Error if the format name is the empty string
-    FormatInfo(std::string name): name_(std::move(name)) {
-        if (name_.empty()) {
-            throw FormatError("a format name can not be an empty string");
-        }
-    }
-
-    /// Get the format name
-    const std::string& name() const {
-        return name_;
-    }
-
-    /// Set the format extension, use this to allow users to use this format
-    /// automatically with files having this extension. The extension should
-    /// start by a dot (`".xxx"`).
-    FormatInfo& with_extension(std::string extension) {
-        if (extension.length() < 1 || extension[0] != '.') {
-            throw FormatError("a format extension must start with a dot");
-        }
-        extension_ = std::move(extension);
-        return *this;
-    }
-
-    /// Get the format extension.
-    ///
-    /// If the extension was not set, this returns an empty string
-    const std::string& extension() const {
-        return extension_;
-    }
-
-    /// Add a format description to this format
-    FormatInfo& description(std::string description) {
-        description_ = std::move(description);
-        return *this;
-    }
-
-    /// Get the format description.
-    const std::string& description() const {
-        return description_;
-    }
-
-private:
-    std::string name_;
-    std::string extension_;
-    std::string description_;
-};
-
-/// Get the metadata associated with `Format`.
-///
-/// In order to implement a new format, one should specialise this function
-/// with the corresponding format:
-///
-/// ```cpp
-/// class MyFormat: public Format {
-///     // ...
-/// };
-///
-/// namespace chemfiles {
-///     template<> FormatInfo format_information<MyFormat>() {
-///         return FormatInfo("MyFormat").with_extension(".mft");
-///     }
-/// }
-/// ```
-template<class Format>
-FormatInfo format_information() {
-    throw FormatError("format_informations is unimplemented for this format");
-}
 
 /// The `TextFormat` class defines a common, simpler interface for text based
 /// formats.

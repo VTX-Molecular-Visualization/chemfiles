@@ -1,21 +1,14 @@
 // Chemfiles, a modern library for chemistry file reading and writing
 // Copyright (C) Guillaume Fraux and contributors -- BSD license
 
+#include <cmath>
 #include <cstdint>
 #include <cassert>
+
 #include <map>
 #include <array>
 #include <string>
 #include <vector>
-
-#include "chemfiles/File.hpp"
-#include "chemfiles/Format.hpp"
-#include "chemfiles/Atom.hpp"
-#include "chemfiles/Frame.hpp"
-#include "chemfiles/Property.hpp"
-#include "chemfiles/Residue.hpp"
-#include "chemfiles/Topology.hpp"
-#include "chemfiles/UnitCell.hpp"
 
 #include "chemfiles/types.hpp"
 #include "chemfiles/utils.hpp"
@@ -25,18 +18,43 @@
 #include "chemfiles/string_view.hpp"
 #include "chemfiles/external/optional.hpp"
 
+#include "chemfiles/File.hpp"
+#include "chemfiles/Atom.hpp"
+#include "chemfiles/Frame.hpp"
+#include "chemfiles/Property.hpp"
+#include "chemfiles/Residue.hpp"
+#include "chemfiles/Topology.hpp"
+#include "chemfiles/UnitCell.hpp"
+#include "chemfiles/FormatMetadata.hpp"
+
 #include "chemfiles/formats/GRO.hpp"
 
 using namespace chemfiles;
 
-template<> FormatInfo chemfiles::format_information<GROFormat>() {
-    return FormatInfo("GRO").with_extension(".gro").description(
-        "GROMACS GRO text format"
-    );
+template<> const FormatMetadata& chemfiles::format_metadata<GROFormat>() {
+    static FormatMetadata metadata;
+    metadata.name = "GRO";
+    metadata.extension = ".gro";
+    metadata.description = "GROMACS GRO text format";
+    metadata.reference = "http://manual.gromacs.org/current/reference-manual/file-formats.html#gro";
+
+    metadata.read = true;
+    metadata.write = true;
+    metadata.memory = true;
+
+    metadata.positions = true;
+    metadata.velocities = true;
+    metadata.unit_cell = true;
+    metadata.atoms = true;
+    metadata.bonds = false;
+    metadata.residues = true;
+    return metadata;
 }
 
+using chemfiles::private_details::is_upper_triangular;
+
 /// Check the number of digits before the decimal separator to be sure than
-/// we can represen them. In case of error, use the given `context` in the error
+/// we can represent them. In case of error, use the given `context` in the error
 /// message
 static void check_values_size(const Vector3D& values, unsigned width, const std::string& context);
 
@@ -106,12 +124,13 @@ void GROFormat::read_next(Frame& frame) {
     auto box_values = split(box, ' ');
 
     if (box_values.size() == 3) {
-        auto a = parse<double>(box_values[0]) * 10;
-        auto b = parse<double>(box_values[1]) * 10;
-        auto c = parse<double>(box_values[2]) * 10;
+        auto lengths = Vector3D(
+            parse<double>(box_values[0]) * 10,
+            parse<double>(box_values[1]) * 10,
+            parse<double>(box_values[2]) * 10
+        );
 
-        auto cell = UnitCell(a, b, c);
-        frame.set_cell(cell);
+        frame.set_cell({lengths});
     } else if (box_values.size() == 9) {
         auto v1_x = parse<double>(box_values[0]) * 10;
         auto v2_y = parse<double>(box_values[1]) * 10;
@@ -127,13 +146,11 @@ void GROFormat::read_next(Frame& frame) {
         auto v3_x = parse<double>(box_values[7]) * 10;
         auto v3_y = parse<double>(box_values[8]) * 10;
 
-        auto H = Matrix3D(
+        auto cell = UnitCell({
             v1_x, v2_x, v3_x,
             0.00, v2_y, v3_y,
-            0.00, 0.00, v3_z);
-
-        auto cell = UnitCell(H);
-
+            0.00, 0.00, v3_z
+        });
         frame.set_cell(cell);
     }
 
@@ -225,22 +242,23 @@ void GROFormat::write_next(const Frame& frame) {
         }
     }
 
-    auto& cell = frame.cell();
-
+    const auto& cell = frame.cell();
     // While this line is free form, we should try to print it in a pretty way that most gro parsers expect
     // This means we cannot support incredibly large cell sizes, but these are likely not practical anyway
     if (cell.shape() == UnitCell::ORTHORHOMBIC || cell.shape() == UnitCell::INFINITE) {
-        check_values_size(Vector3D(cell.a() / 10, cell.b() / 10, cell.c() / 10), 8, "Unit Cell");
-        file_.print(
-            // Will print zeros if infinite, line is still required
-            "  {:8.5f}  {:8.5f}  {:8.5f}\n",
-            cell.a() / 10, cell.b() / 10, cell.c() / 10);
+        auto lengths = cell.lengths() / 10;
+        check_values_size(lengths, 8, "unit cell");
+        // print zeros if the cell is infinite, this line is still required
+        file_.print("   {:8.5f} {:8.5f} {:8.5f}\n", lengths[0], lengths[1], lengths[2]);
     } else { // Triclinic
         const auto& matrix = cell.matrix() / 10;
-        check_values_size(Vector3D(matrix[0][0], matrix[1][1], matrix[2][2]), 8, "Unit Cell");
-        check_values_size(Vector3D(matrix[0][1], matrix[0][2], matrix[1][2]), 8, "Unit Cell");
+        if (!is_upper_triangular(matrix)) {
+            throw format_error("unsupported triclinic but non upper-triangular cell matrix in GRO writer");
+        }
+        check_values_size(Vector3D(matrix[0][0], matrix[1][1], matrix[2][2]), 8, "unit cell");
+        check_values_size(Vector3D(matrix[0][1], matrix[0][2], matrix[1][2]), 8, "unit cell");
         file_.print(
-            "  {:8.5f}  {:8.5f}  {:8.5f} 0.0 0.0  {:8.5f} 0.0  {:8.5f}  {:8.5f}\n",
+            "   {:8.5f} {:8.5f} {:8.5f} 0.0 0.0 {:8.5f} 0.0 {:8.5f} {:8.5f}\n",
             matrix[0][0], matrix[1][1], matrix[2][2], matrix[0][1], matrix[0][2], matrix[1][2]
         );
     }

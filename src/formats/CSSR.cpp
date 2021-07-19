@@ -7,6 +7,14 @@
 #include <string>
 #include <vector>
 
+#include "chemfiles/types.hpp"
+#include "chemfiles/parse.hpp"
+#include "chemfiles/utils.hpp"
+#include "chemfiles/warnings.hpp"
+#include "chemfiles/error_fmt.hpp"
+#include "chemfiles/string_view.hpp"
+#include "chemfiles/external/optional.hpp"
+
 #include "chemfiles/File.hpp"
 #include "chemfiles/Format.hpp"
 #include "chemfiles/Atom.hpp"
@@ -14,13 +22,7 @@
 #include "chemfiles/Topology.hpp"
 #include "chemfiles/UnitCell.hpp"
 #include "chemfiles/Connectivity.hpp"
-
-#include "chemfiles/types.hpp"
-#include "chemfiles/parse.hpp"
-#include "chemfiles/warnings.hpp"
-#include "chemfiles/error_fmt.hpp"
-#include "chemfiles/string_view.hpp"
-#include "chemfiles/external/optional.hpp"
+#include "chemfiles/FormatMetadata.hpp"
 
 #include "chemfiles/formats/CSSR.hpp"
 
@@ -30,16 +32,24 @@ namespace chemfiles {
 
 using namespace chemfiles;
 
-static bool is_digit(char c) {
-    return c == '0' || c == '1' || c == '2' || c == '3' || c == '4' ||
-           c == '5' || c == '6' || c == '7' || c == '8' || c == '9';
-}
+template<> const FormatMetadata& chemfiles::format_metadata<CSSRFormat>() {
+    static FormatMetadata metadata;
+    metadata.name = "CSSR";
+    metadata.extension = ".cssr";
+    metadata.description = "CSSR text format";
+    metadata.reference = "http://www.chem.cmu.edu/courses/09-560/docs/msi/modenv/D_Files.html#944777";
 
+    metadata.read = true;
+    metadata.write = true;
+    metadata.memory = true;
 
-template<> FormatInfo chemfiles::format_information<CSSRFormat>() {
-    return FormatInfo("CSSR").with_extension(".cssr").description(
-        "CSSR text format"
-    );
+    metadata.positions = true;
+    metadata.velocities = false;
+    metadata.unit_cell = true;
+    metadata.atoms = true;
+    metadata.bonds = true;
+    metadata.residues = false;
+    return metadata;
 }
 
 
@@ -65,11 +75,10 @@ void CSSRFormat::read_next(Frame& frame) {
     }
 
     // Read unit cell
-    double a = 0, b = 0, c = 0;
-    scan(file_.readline().substr(38), a, b, c);
-    double alpha = 0, beta = 0, gamma = 0;
-    scan(file_.readline().substr(21), alpha, beta, gamma);
-    frame.set_cell(UnitCell(a, b, c, alpha, beta, gamma));
+    Vector3D lengths, angles;
+    scan(file_.readline().substr(38), lengths[0], lengths[1], lengths[2]);
+    scan(file_.readline().substr(21), angles[0], angles[1], angles[2]);
+    frame.set_cell({lengths, angles});
 
     size_t natoms = 0;
     int coordinate_style = -1;
@@ -105,7 +114,7 @@ void CSSRFormat::read_next(Frame& frame) {
         auto type = name;
         size_t type_length = 0;
         for (auto ch: type) {
-            if (is_digit(ch)) {
+            if (is_ascii_digit(ch)) {
                 break;
             }
             type_length += 1;
@@ -135,13 +144,16 @@ void CSSRFormat::write_next(const Frame& frame) {
         throw format_error("CSSR format only supports writing one frame");
     }
 
+    auto lengths = frame.cell().lengths();
     file_.print(
         " REFERENCE STRUCTURE = 00000   A,B,C ={:8.3f}{:8.3f}{:8.3f}\n",
-        frame.cell().a(), frame.cell().b(), frame.cell().c()
+        lengths[0], lengths[1], lengths[2]
     );
+
+    auto angles = frame.cell().angles();
     file_.print(
         "   ALPHA,BETA,GAMMA ={:8.3f}{:8.3f}{:8.3f}    SPGR =  1 P1\n",
-        frame.cell().alpha(), frame.cell().beta(), frame.cell().gamma()
+        angles[0], angles[1], angles[2]
     );
 
     if (frame.size() > 9999) {

@@ -3,24 +3,32 @@
 
 #include <cassert>
 #include <cstdint>
+
 #include <map>
 #include <array>
 #include <string>
 #include <vector>
 #include <exception>
+#include <unordered_map>
+
+#include <fmt/format.h>
+
+#include "chemfiles/types.hpp"
+#include "chemfiles/parse.hpp"
+#include "chemfiles/utils.hpp"
+#include "chemfiles/warnings.hpp"
+#include "chemfiles/error_fmt.hpp"
+#include "chemfiles/string_view.hpp"
+#include "chemfiles/unreachable.hpp"
+#include "chemfiles/external/optional.hpp"
 
 #include "chemfiles/File.hpp"
-#include "chemfiles/Format.hpp"
 #include "chemfiles/Atom.hpp"
 #include "chemfiles/Frame.hpp"
 #include "chemfiles/Topology.hpp"
 #include "chemfiles/Property.hpp"
-
-#include "chemfiles/types.hpp"
-#include "chemfiles/parse.hpp"
-#include "chemfiles/error_fmt.hpp"
-#include "chemfiles/external/optional.hpp"
-#include "chemfiles/warnings.hpp"
+#include "chemfiles/UnitCell.hpp"
+#include "chemfiles/FormatMetadata.hpp"
 
 #include "chemfiles/formats/XYZ.hpp"
 
@@ -47,10 +55,24 @@ static void read_atomic_properties(const properties_list_t& properties, string_v
 /// Generate the extended XYZ comment line for the given frame
 static std::string write_extended_comment_line(const Frame& frame);
 
-template<> FormatInfo chemfiles::format_information<XYZFormat>() {
-    return FormatInfo("XYZ").with_extension(".xyz").description(
-        "XYZ text format"
-    );
+template<> const FormatMetadata& chemfiles::format_metadata<XYZFormat>() {
+    static FormatMetadata metadata;
+    metadata.name = "XYZ";
+    metadata.extension = ".xyz";
+    metadata.description = "XYZ text format";
+    metadata.reference = "https://openbabel.org/wiki/XYZ";
+
+    metadata.read = true;
+    metadata.write = true;
+    metadata.memory = true;
+
+    metadata.positions = true;
+    metadata.velocities = false;
+    metadata.unit_cell = true;
+    metadata.atoms = true;
+    metadata.bonds = false;
+    metadata.residues = false;
+    return metadata;
 }
 
 void XYZFormat::read_next(Frame& frame) {
@@ -135,7 +157,7 @@ static bool should_be_quoted(string_view s) {
     for (auto c: s) {
         // TODO: ASE also allow [] {} and () to function as quotes. This should
         // be updated when a specification is agreed on.
-        if (is_whitespace(c) || c == '=' || c == '\'' || c == '"') {
+        if (is_ascii_whitespace(c) || c == '=' || c == '\'' || c == '"') {
             return true;
         }
     }
@@ -232,7 +254,7 @@ std::string write_extended_comment_line(const Frame& frame) {
 using extended_xyz_properties_map_t = std::unordered_map<string_view, Property>;
 
 /// A simple parser for the extended XYZ comment line. This parser bails out as
-/// soons as possible if the line does not seems to follow extended XYZ
+/// soon as possible if the line does not seems to follow extended XYZ
 /// convention.
 ///
 /// This line should contains key/values pairs separated by spaces, while the
@@ -262,7 +284,7 @@ public:
             }
 
             auto value = next_substring();
-            if (!is_whitespace(current()) && !done()) {
+            if (!is_ascii_whitespace(current()) && !done()) {
                 // missing a space after the value, bail out here
                 warning("Extended XYZ", "expected whitespace after the value for {}, got {}", name, current());
                 break;
@@ -276,7 +298,7 @@ public:
 private:
     void skip_whitespace() {
         while (!done()) {
-            if (is_whitespace(current())) {
+            if (is_ascii_whitespace(current())) {
                 advance();
             } else {
                 return;
@@ -303,7 +325,7 @@ private:
                 check_for_quote = false;
                 advance();
                 break;
-            } else if (!check_for_quote && (is_whitespace(current()) || current() == '=')) {
+            } else if (!check_for_quote && (is_ascii_whitespace(current()) || current() == '=')) {
                 // end of non-quoted value
                 break;
             } else {
@@ -367,7 +389,7 @@ static UnitCell parse_cell(string_view lattice) {
 /// returned in the property list.
 ///
 /// When converting atomic properties as described by the 'Properties'
-/// value, the followig rules are used:
+/// value, the following rules are used:
 ///
 /// - Properties of type L:1 are maped to boolean values
 /// - Properties of type L:N are maped to N separate boolean properties,
@@ -490,7 +512,7 @@ void read_atomic_properties(const properties_list_t& properties, string_view lin
             std::string value;
             auto count = scan(line, value);
             line.remove_prefix(count);
-            tolower(value);
+            to_ascii_lowercase(value);
             if (value == "t" || value == "true") {
                 atom.set(property.name, true);
             } else if (value == "f" || value == "false") {

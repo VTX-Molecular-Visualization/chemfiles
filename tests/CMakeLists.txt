@@ -1,5 +1,5 @@
 # Update this value if you need to update the data file set
-set(TESTS_DATA_GIT "91e2b541878d6d62eabf3a76573b0726d2646b5b")
+set(TESTS_DATA_GIT "6fc982cdf888004671100d33d9f4fbe1ba670807")
 
 if(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/data/${TESTS_DATA_GIT}")
     message(STATUS "Downloading test data files")
@@ -7,7 +7,7 @@ if(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/data/${TESTS_DATA_GIT}")
         "https://github.com/chemfiles/tests-data/archive/${TESTS_DATA_GIT}.tar.gz"
         "${CMAKE_CURRENT_BINARY_DIR}/${TESTS_DATA_GIT}.tar.gz"
         SHOW_PROGRESS
-        EXPECTED_HASH SHA1=650525331ee5555c57a13af9b5fdf7a2f8d4cb86
+        EXPECTED_HASH SHA1=04f1e562022cd603fa51f940800c0a33cfc0c7a6
     )
 
     message(STATUS "Unpacking test data files")
@@ -187,40 +187,6 @@ file(GLOB_RECURSE capi_doctest_files ${CMAKE_CURRENT_SOURCE_DIR}/doc/capi/**.c)
 foreach(test_file IN LISTS capi_doctest_files)
     chfl_c_doctest(${test_file})
 endforeach()
-
-# Write sample configuration files for tests
-file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/../.chemfiles.toml
-"[types]
-Oh = \"O\"
-Oz = \"O\"
-N2 = \"N\"
-
-[atoms.CH3]
-mass = 15.0
-charge = 0
-full_name = \"methyl\"
-
-[atoms.Zn]
-charge = 1.8
-
-[atoms.SO4]
-mass = 96.0
-charge = -2
-full_name = \"sulfate\"
-vdw_radius = 3.68
-covalent_radius = 2.42
-")
-
-file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/chemfiles.toml
-"[types]
-# This override the root .chemfiles.toml file
-N2 = \"N4\"
-")
-
-file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/local-file.toml
-"[types]
-Oz = \"F\"
-")
 
 # Code linting with Python scripts
 if(${CMAKE_VERSION} VERSION_GREATER "3.12")

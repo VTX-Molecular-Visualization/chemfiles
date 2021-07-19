@@ -9,6 +9,7 @@
 
 #include "chemfiles/File.hpp"
 #include "chemfiles/Format.hpp"
+
 #include "chemfiles/files/NcFile.hpp"
 
 namespace chemfiles {
@@ -16,11 +17,11 @@ namespace chemfiles {
 class Frame;
 class UnitCell;
 class Vector3D;
+class FormatMetadata;
+
 template <class T> class span;
 
-/// [Amber NetCDF][NetCDF] file format reader.
-///
-/// [NetCDF]: http://ambermd.org/netcdf/nctraj.xhtml
+/// Amber NetCDF file format reader.
 class AmberNetCDFFormat final: public Format {
 public:
     AmberNetCDFFormat(std::string path, File::Mode mode, File::Compression compression);
@@ -52,7 +53,7 @@ private:
     bool validated_;
 };
 
-template<> FormatInfo format_information<AmberNetCDFFormat>();
+template<> const FormatMetadata& format_metadata<AmberNetCDFFormat>();
 
 } // namespace chemfiles
 

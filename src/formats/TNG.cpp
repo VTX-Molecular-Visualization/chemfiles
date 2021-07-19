@@ -8,32 +8,45 @@
 #include <string>
 #include <vector>
 #include <cassert>
-#include <algorithm>
 
 #include <tng/tng_io.h>
-
-#include "chemfiles/File.hpp"
-#include "chemfiles/Format.hpp"
-#include "chemfiles/Atom.hpp"
-#include "chemfiles/Frame.hpp"
-#include "chemfiles/Residue.hpp"
-#include "chemfiles/Topology.hpp"
-#include "chemfiles/UnitCell.hpp"
 
 #include "chemfiles/types.hpp"
 #include "chemfiles/error_fmt.hpp"
 #include "chemfiles/external/optional.hpp"
 #include "chemfiles/external/span.hpp"
 
+#include "chemfiles/File.hpp"
+#include "chemfiles/Atom.hpp"
+#include "chemfiles/Frame.hpp"
+#include "chemfiles/Residue.hpp"
+#include "chemfiles/Topology.hpp"
+#include "chemfiles/UnitCell.hpp"
+#include "chemfiles/FormatMetadata.hpp"
+
 #include "chemfiles/files/TNGFile.hpp"
 #include "chemfiles/formats/TNG.hpp"
 
 using namespace chemfiles;
 
-template<> FormatInfo chemfiles::format_information<TNGFormat>() {
-    return FormatInfo("TNG").with_extension(".tng").description(
-        "Trajectory New Generation binary format"
-    );
+template<> const FormatMetadata& chemfiles::format_metadata<TNGFormat>() {
+    static FormatMetadata metadata;
+    metadata.name = "TNG";
+    metadata.extension = ".tng";
+    metadata.description = "Trajectory Next Generation binary format";
+    metadata.reference = "http://doi.wiley.com/10.1002/jcc.23495";
+
+    metadata.read = true;
+    metadata.write = false;
+    metadata.memory = false;
+
+    metadata.positions = true;
+    metadata.velocities = true;
+    metadata.unit_cell = true;
+    metadata.atoms = true;
+    metadata.bonds = true;
+    metadata.residues = true;
+    return metadata;
 }
 
 /// A buffer for TNG allocated data. It will not allocate its own memory, but
@@ -196,23 +209,13 @@ void TNGFormat::read_cell(Frame& frame) {
         );
     }
 
-    auto a = Vector3D(static_cast<double>(buffer[0]), static_cast<double>(buffer[1]), static_cast<double>(buffer[2]));
-    auto b = Vector3D(static_cast<double>(buffer[3]), static_cast<double>(buffer[4]), static_cast<double>(buffer[5]));
-    auto c = Vector3D(static_cast<double>(buffer[6]), static_cast<double>(buffer[7]), static_cast<double>(buffer[8]));
+    auto matrix = distance_scale_factor_ * Matrix3D(
+        static_cast<double>(buffer[0]), static_cast<double>(buffer[3]), static_cast<double>(buffer[6]),
+        static_cast<double>(buffer[1]), static_cast<double>(buffer[4]), static_cast<double>(buffer[7]),
+        static_cast<double>(buffer[2]), static_cast<double>(buffer[5]), static_cast<double>(buffer[8])
+    );
 
-    auto angle = [](const Vector3D& u, const Vector3D& v) {
-        constexpr double PI = 3.141592653589793238463;
-        auto cos = dot(u, v) / (u.norm() * v.norm());
-        cos = std::max(-1., std::min(1., cos));
-        return acos(cos) * 180.0 / PI;
-    };
-
-    double alpha = angle(b, c);
-    double beta = angle(a, c);
-    double gamma = angle(a, b);
-
-    frame.set_cell({a.norm() * distance_scale_factor_, b.norm() * distance_scale_factor_, c.norm() * distance_scale_factor_,
-        alpha, beta, gamma});
+    frame.set_cell(UnitCell(matrix));
 }
 
 void TNGFormat::read_topology(Frame& frame) {

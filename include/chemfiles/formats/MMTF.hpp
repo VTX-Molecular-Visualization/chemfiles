@@ -14,17 +14,20 @@
 #include "chemfiles/File.hpp"
 #include "chemfiles/Format.hpp"
 
+#include "chemfiles/UnitCell.hpp"
+#include "chemfiles/external/span.hpp"
+
 namespace chemfiles {
 class Frame;
 class Residue;
+class Vector3D;
 class MemoryBuffer;
+class FormatMetadata;
 
-/// [MMTF][MMTF] file format reader and writer.
+/// MMTF file format reader and writer.
 ///
 /// For multi-frame trajectories, we follow the PyMOL convention to use multiple
 /// models for different frames
-///
-/// [MMTF]: https://mmtf.rcsb.org/
 class MMTFFormat final: public Format {
 public:
     MMTFFormat(std::string path, File::Mode mode, File::Compression compression);
@@ -87,7 +90,7 @@ private:
     /// Current atom being read. Ranges from [0, structure.numAtoms)
     size_t atomIndex_ = 0;
 
-    /// Location of the inter-residue bonds being read. 
+    /// Location of the inter-residue bonds being read.
     size_t interBondIndex_ = 0;
 
     /// Number of atoms before the current model.
@@ -96,17 +99,18 @@ private:
     // Since MMTF uses model->chain->residue->atom as storage model, and
     // chemfiles do not enforce that residues contains contiguous atoms, the
     // atoms can be re-ordered when adding them to a MMTF structure. This vector
-    // stores the correspondance chemfiles index => MMTF index to be able to add
-    // the right bonds.
+    // stores the association from chemfiles index to MMTF index to be able to
+    // add the right bonds.
     //
-    // This is only used when writing
+    // This is only used when writing files, or reading files
+    // with unordered or incomplete ids (e.g. reduced representation).
     std::vector<int32_t> new_atom_indexes_;
 
     /// Have we written the unitcell data?
     UnitCell unitcellForWrite_;
 };
 
-template<> FormatInfo format_information<MMTFFormat>();
+template<> const FormatMetadata& format_metadata<MMTFFormat>();
 
 } // namespace chemfiles
 

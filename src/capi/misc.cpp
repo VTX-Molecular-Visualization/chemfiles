@@ -1,15 +1,23 @@
 // Chemfiles, a modern library for chemistry file reading and writing
 // Copyright (C) Guillaume Fraux and contributors -- BSD license
 
-#include <string>
+#include <cstdint>
+#include <cstdlib>
 
+#include <string>
+#include <vector>
+#include <functional>
+
+#include "chemfiles/config.h"
 #include "chemfiles/capi/types.h"
 #include "chemfiles/capi/misc.h"
 #include "chemfiles/capi/utils.hpp"
 #include "chemfiles/capi/shared_allocator.hpp"
 
 #include "chemfiles/misc.hpp"
-#include "chemfiles/config.h"
+#include "chemfiles/external/optional.hpp"
+
+#include "chemfiles/FormatMetadata.hpp"
 
 using namespace chemfiles;
 
@@ -47,8 +55,34 @@ extern "C" chfl_status chfl_set_warning_callback(chfl_warning_callback callback)
     )
 }
 
-extern "C" chfl_status chfl_add_configuration(const char* path) {
+extern "C" chfl_status chfl_formats_list(chfl_format_metadata** metadata, uint64_t* count) {
+    CHECK_POINTER(metadata);
+    CHECK_POINTER(count);
     CHFL_ERROR_CATCH(
-        add_configuration(path);
+        auto formats = formats_list();
+        *count = static_cast<uint64_t>(formats.size());
+        *metadata = shared_allocator::make_shared<chfl_format_metadata[]>(formats.size());
+        for (size_t i=0; i<formats.size(); i++) {
+            // here we rely on the fact that only one instance of each matdata
+            // exist, and that they come from static storage, allowing us to
+            // take reference to data directly inside `formats[i]` even if is it
+            // a local temporary.
+            const auto& meta = formats[i].get();
+            (*metadata)[i].name = meta.name;
+            (*metadata)[i].extension = meta.extension.value_or(nullptr);
+            (*metadata)[i].description = meta.description;
+            (*metadata)[i].reference = meta.reference;
+
+            (*metadata)[i].read = meta.read;
+            (*metadata)[i].write = meta.write;
+            (*metadata)[i].memory = meta.memory;
+
+            (*metadata)[i].positions = meta.positions;
+            (*metadata)[i].velocities = meta.velocities;
+            (*metadata)[i].unit_cell = meta.unit_cell;
+            (*metadata)[i].atoms = meta.atoms;
+            (*metadata)[i].bonds = meta.bonds;
+            (*metadata)[i].residues = meta.residues;
+        }
     )
 }

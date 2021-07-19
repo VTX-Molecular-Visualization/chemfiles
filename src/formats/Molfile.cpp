@@ -8,23 +8,24 @@ extern "C" {
 }
 
 #include <cassert>
+#include <cstdint>
 #include <array>
 #include <string>
 #include <vector>
 #include <unordered_map>
-
-#include "chemfiles/File.hpp"
-#include "chemfiles/Format.hpp"
-#include "chemfiles/Atom.hpp"
-#include "chemfiles/Frame.hpp"
-#include "chemfiles/Residue.hpp"
-#include "chemfiles/Topology.hpp"
 
 #include "chemfiles/types.hpp"
 #include "chemfiles/warnings.hpp"
 #include "chemfiles/error_fmt.hpp"
 #include "chemfiles/external/span.hpp"
 #include "chemfiles/external/optional.hpp"
+
+#include "chemfiles/File.hpp"
+#include "chemfiles/Atom.hpp"
+#include "chemfiles/Frame.hpp"
+#include "chemfiles/Residue.hpp"
+#include "chemfiles/Topology.hpp"
+#include "chemfiles/FormatMetadata.hpp"
 
 #include "chemfiles/formats/Molfile.hpp"
 
@@ -50,7 +51,6 @@ using namespace chemfiles;
 namespace chemfiles {
     PLUGINS_DATA(DCD,               dcdplugin,          dcd,            false);
     PLUGINS_DATA(TRJ,               gromacsplugin,      trj,            false);
-    PLUGINS_DATA(LAMMPS,            lammpsplugin,       lammpstrj,      true);
     PLUGINS_DATA(MOLDEN,            moldenplugin,       molden,         false);
 }
 
@@ -162,7 +162,7 @@ template <MolfileFormat F> void Molfile<F>::read(Frame& frame) {
     std::vector<float> coords(3 * static_cast<size_t>(natoms_));
     std::vector<float> velocities(0);
 
-    molfile_timestep_t timestep{nullptr, nullptr, 0, 0, 0, 0, 0, 0, 0};
+    molfile_timestep_t timestep{nullptr, nullptr, 0, 0, 0, 90, 90, 90, 0};
     timestep.coords = coords.data();
     if (plugin_data_.have_velocities()) {
         velocities.resize(3 * static_cast<size_t>(natoms_));
@@ -198,7 +198,7 @@ template <MolfileFormat F> size_t Molfile<F>::nsteps() {
     if (plugin_handle_->read_next_timestep == nullptr) {
         // FIXME: this is hacky, but the molden plugin does not respect a NULL
         // argument for molfile_timestep_t, so for now we are only able to read
-        // a sinle step from all the QM format plugins.
+        // a single step from all the QM format plugins.
         return 1;
     }
     size_t n = 0;
@@ -221,16 +221,18 @@ template <MolfileFormat F> size_t Molfile<F>::nsteps() {
 }
 
 template <MolfileFormat F>
-void Molfile<F>::molfile_to_frame(const molfile_timestep_t& timestep,
-                                  Frame& frame) {
-    frame.set_cell({
+void Molfile<F>::molfile_to_frame(const molfile_timestep_t& timestep, Frame& frame) {
+    auto lengths = Vector3D(
         static_cast<double>(timestep.A),
         static_cast<double>(timestep.B),
-        static_cast<double>(timestep.C),
+        static_cast<double>(timestep.C)
+    );
+    auto angles = Vector3D(
         static_cast<double>(timestep.alpha),
         static_cast<double>(timestep.beta),
         static_cast<double>(timestep.gamma)
-    });
+    );
+    frame.set_cell({lengths, angles});
 
     frame.resize(static_cast<size_t>(natoms_));
     auto positions = frame.positions();
@@ -319,32 +321,67 @@ template <MolfileFormat F> void Molfile<F>::read_topology() {
     }
 }
 
-// Instanciate all the templates
+// Instantiate all the templates
 template class chemfiles::Molfile<DCD>;
 template class chemfiles::Molfile<TRJ>;
-template class chemfiles::Molfile<LAMMPS>;
 template class chemfiles::Molfile<MOLDEN>;
 
-template<> FormatInfo chemfiles::format_information<Molfile<DCD>>() {
-    return FormatInfo("DCD").with_extension(".dcd").description(
-        "DCD binary format"
-    );
+template<> const FormatMetadata& chemfiles::format_metadata<Molfile<DCD>>() {
+    static FormatMetadata metadata;
+    metadata.name = "DCD";
+    metadata.extension = ".dcd";
+    metadata.description = "DCD binary format";
+    metadata.reference = "http://www.ks.uiuc.edu/Research/vmd/plugins/molfile/dcdplugin.html";
+
+    metadata.read = true;
+    metadata.write = false;
+    metadata.memory = false;
+
+    metadata.positions = true;
+    metadata.velocities = false;
+    metadata.unit_cell = false;
+    metadata.atoms = false;
+    metadata.bonds = false;
+    metadata.residues = false;
+    return metadata;
 }
 
-template<> FormatInfo chemfiles::format_information<Molfile<TRJ>>() {
-    return FormatInfo("TRJ").with_extension(".trj").description(
-        "GROMACS .trj binary format"
-    );
+template<> const FormatMetadata& chemfiles::format_metadata<Molfile<TRJ>>() {
+    static FormatMetadata metadata;
+    metadata.name = "TRJ";
+    metadata.extension = ".trj";
+    metadata.description = "GROMACS .trj binary format";
+    metadata.reference = "http://manual.gromacs.org/archive/5.0.7/online/trj.html";
+
+    metadata.read = true;
+    metadata.write = false;
+    metadata.memory = false;
+
+    metadata.positions = true;
+    metadata.velocities = false;
+    metadata.unit_cell = false;
+    metadata.atoms = false;
+    metadata.bonds = false;
+    metadata.residues = false;
+    return metadata;
 }
 
-template<> FormatInfo chemfiles::format_information<Molfile<LAMMPS>>() {
-    return FormatInfo("LAMMPS").with_extension(".lammpstrj").description(
-        "LAMMPS text trajectory format"
-    );
-}
+template<> const FormatMetadata& chemfiles::format_metadata<Molfile<MOLDEN>>() {
+    static FormatMetadata metadata;
+    metadata.name = "Molden";
+    metadata.extension = ".molden";
+    metadata.description = "Molden text format";
+    metadata.reference = "https://web.archive.org/web/20200531080022/http://cheminf.cmbi.ru.nl/molden/molden_format.html";
 
-template<> FormatInfo chemfiles::format_information<Molfile<MOLDEN>>() {
-    return FormatInfo("Molden").with_extension(".molden").description(
-        "Molden text format"
-    );
+    metadata.read = true;
+    metadata.write = false;
+    metadata.memory = false;
+
+    metadata.positions = true;
+    metadata.velocities = false;
+    metadata.unit_cell = false;
+    metadata.atoms = true;
+    metadata.bonds = false;
+    metadata.residues = false;
+    return metadata;
 }

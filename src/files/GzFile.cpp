@@ -1,18 +1,20 @@
 // Chemfiles, a modern library for chemistry file reading and writing
 // Copyright (C) Guillaume Fraux and contributors -- BSD license
-#define ZLIB_CONST
-#include <zconf.h>
-#include <zlib.h>
-
 #include <cstdio>
 #include <cstdint>
 #include <limits>
 #include <string>
-#include <vector>
+
+#define ZLIB_CONST
+#include <zconf.h>
+#include <zlib.h>
 
 #include "chemfiles/File.hpp"
-#include "chemfiles/files/GzFile.hpp"
 #include "chemfiles/error_fmt.hpp"
+#include "chemfiles/unreachable.hpp"
+
+#include "chemfiles/files/MemoryBuffer.hpp"
+#include "chemfiles/files/GzFile.hpp"
 
 using namespace chemfiles;
 
@@ -36,6 +38,8 @@ GzFile::GzFile(const std::string& path, File::Mode mode): TextFileImpl(path) {
     case File::APPEND:
         openmode = "ab7";
         break;
+    default:
+        unreachable();
     }
 
     file_ = gzopen64(path.c_str(), openmode);
@@ -92,17 +96,17 @@ void GzFile::seek(uint64_t position) {
     }
 }
 
-std::vector<char> chemfiles::gzinflate_in_place(const char* src, size_t size) {
+MemoryBuffer chemfiles::decompress_gz(const char* src, size_t size) {
     // assume a 10% compression ratio, which should be plenty enough
     // (typical ratio is around 15-20%)
-    std::vector<char> output(10 * size);
+    auto output = MemoryBuffer(10 * size);
 
     z_stream stream;
     stream.next_in = reinterpret_cast<const Bytef*>(src);
     stream.avail_in = checked_cast(size);
     stream.total_out = 0;
-    stream.zalloc = Z_NULL;
-    stream.zfree = Z_NULL;
+    stream.zalloc = nullptr;
+    stream.zfree = nullptr;
 
     // the second parameter is set to 15 (use the largest window possible) + 32
     // (detect header and check between gzip or zlib header)
@@ -114,19 +118,19 @@ std::vector<char> chemfiles::gzinflate_in_place(const char* src, size_t size) {
     bool done = false;
     do {
         // if we need more space, resize the vector
-        if (stream.total_out >= output.size()) {
-            output.resize(2 * output.size());
+        if (stream.total_out >= output.capacity()) {
+            output.reserve_extra(output.capacity());
         }
 
-	    stream.next_out = reinterpret_cast<Bytef*>(output.data() + stream.total_out);
-        stream.avail_out = checked_cast(output.size() - stream.total_out);
+	    stream.next_out = reinterpret_cast<Bytef*>(output.data_mut() + stream.total_out);
+        stream.avail_out = checked_cast(output.capacity() - stream.total_out);
 
         status = inflate(&stream, Z_SYNC_FLUSH);
         if (status == Z_STREAM_END) {
 		    done = true;
         } else if (status != Z_OK) {
 		    inflateEnd(&stream);
-            throw file_error("error inflating gzipped memory: {}", stream.msg);
+            throw file_error("error inflating gziped memory: {}", stream.msg);
 	    }
     } while (!done);
 
@@ -135,6 +139,10 @@ std::vector<char> chemfiles::gzinflate_in_place(const char* src, size_t size) {
 	    throw file_error("error finishing gz stream: {}", stream.msg);
     }
 
-    output.resize(stream.total_out);
+    if (stream.total_out >= output.capacity()) {
+        // make sure the buffer always contains a terminal NULL
+        output.reserve_extra(1);
+    }
+    output.set_size(stream.total_out);
     return output;
 }

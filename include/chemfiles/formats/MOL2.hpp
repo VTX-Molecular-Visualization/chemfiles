@@ -17,10 +17,9 @@ namespace chemfiles {
 class Frame;
 class Residue;
 class MemoryBuffer;
+class FormatMetadata;
 
-/// Tripos [MOL2] format reader and writer.
-///
-/// [MOL2]: http://chemyang.ccnu.edu.cn/ccb/server/AIMMS/mol2.pdf
+/// Tripos MOL2 format reader and writer.
 class MOL2Format final: public TextFormat {
 public:
     MOL2Format(std::string path, File::Mode mode, File::Compression compression):
@@ -44,7 +43,7 @@ private:
     std::unordered_map<int64_t, Residue> residues_;
 };
 
-template<> FormatInfo format_information<MOL2Format>();
+template<> const FormatMetadata& format_metadata<MOL2Format>();
 
 } // namespace chemfiles
 

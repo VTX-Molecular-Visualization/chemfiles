@@ -1,47 +1,57 @@
 // Chemfiles, a modern library for chemistry file reading and writing
 // Copyright (C) Guillaume Fraux and contributors -- BSD license
 
-#include "chemfiles/config.h"
+#include "chemfiles/config.h"  // IWYU pragma: keep
 #ifndef CHFL_DISABLE_GEMMI
 
 #include <cassert>
-#include <cstdint>
-#include <map>
+#include <cmath>
+
 #include <array>
 #include <vector>
 #include <string>
-#include <memory>
-#include <utility>
-#include <algorithm>
+#include <exception>
+
+#include <gemmi/cif.hpp>
+#include <gemmi/elem.hpp>
+#include <gemmi/small.hpp>
+#include <gemmi/smcif.hpp>
+#include <gemmi/cifdoc.hpp>
+#include <gemmi/unitcell.hpp>
+
+#include "chemfiles/types.hpp"
+#include "chemfiles/error_fmt.hpp"
+#include "chemfiles/external/optional.hpp"
 
 #include "chemfiles/File.hpp"
-#include "chemfiles/Format.hpp"
 #include "chemfiles/Atom.hpp"
 #include "chemfiles/Frame.hpp"
 #include "chemfiles/Property.hpp"
-#include "chemfiles/Residue.hpp"
-#include "chemfiles/Topology.hpp"
 #include "chemfiles/UnitCell.hpp"
-
-#include "gemmi/cif.hpp"
-#include "gemmi/smcif.hpp"
-#include "gemmi/to_cif.hpp"
-
-#include "chemfiles/types.hpp"
-#include "chemfiles/utils.hpp"
-#include "chemfiles/parse.hpp"
-#include "chemfiles/error_fmt.hpp"
-#include "chemfiles/string_view.hpp"
-#include "chemfiles/external/optional.hpp"
+#include "chemfiles/FormatMetadata.hpp"
 
 #include "chemfiles/formats/CIF.hpp"
 
 using namespace chemfiles;
 
-template<> FormatInfo chemfiles::format_information<CIFFormat>() {
-    return FormatInfo("CIF").with_extension(".cif").description(
-        "CIF (Crystallographic Information Framework)"
-    );
+template<> const FormatMetadata& chemfiles::format_metadata<CIFFormat>() {
+    static FormatMetadata metadata;
+    metadata.name = "CIF";
+    metadata.extension = ".cif";
+    metadata.description = "Crystallographic Information Framework files";
+    metadata.reference = "https://www.iucr.org/resources/cif";
+
+    metadata.read = true;
+    metadata.write = true;
+    metadata.memory = true;
+
+    metadata.positions = true;
+    metadata.velocities = false;
+    metadata.unit_cell = true;
+    metadata.atoms = true;
+    metadata.bonds = false;
+    metadata.residues = false;
+    return metadata;
 }
 
 void CIFFormat::init_() {
@@ -58,7 +68,7 @@ void CIFFormat::init_() {
     // Parse the CIF file
     auto content = file_.readall();
     try {
-        doc = gemmi::cif::Document(gemmi::cif::read_string(content));
+        doc = gemmi::cif::read_string(content);
     } catch (std::exception& e) {
         throw format_error("cannot parse CIF file: {}", e.what());
     }
@@ -97,8 +107,8 @@ void CIFFormat::read_step(const size_t step, Frame& frame) {
        && std::abs(structure.cell.beta - 90) < 1.e-3
        && std::abs(structure.cell.gamma - 90) < 1.e-3)) {
         cell = UnitCell(
-            structure.cell.a, structure.cell.b, structure.cell.c,
-            structure.cell.alpha, structure.cell.beta, structure.cell.gamma
+            {structure.cell.a, structure.cell.b, structure.cell.c},
+            {structure.cell.alpha, structure.cell.beta, structure.cell.gamma}
         );
     }
 
@@ -139,24 +149,20 @@ void CIFFormat::write(const Frame& frame) {
     // https://www.ccdc.cam.ac.uk/solutions/csd-system/components/mercury/
     // i.e. we define a cubic cell with side 1 ångström
     Matrix3D invmat = Matrix3D::unit();
-    double a = 1, b = 1, c = 1;
-    double alpha = 90, beta = 90, gamma = 90;
+    Vector3D lengths = {1, 1, 1};
+    Vector3D angles = {90, 90, 90};
     if (frame.cell().shape() != UnitCell::INFINITE) {
         invmat = frame.cell().matrix().invert();
-        a = frame.cell().a();
-        b = frame.cell().b();
-        c = frame.cell().c();
-        alpha = frame.cell().alpha();
-        beta = frame.cell().beta();
-        gamma = frame.cell().gamma();
+        lengths = frame.cell().lengths();
+        angles = frame.cell().angles();
     }
 
-    file_.print("_cell_length_a {}\n", a);
-    file_.print("_cell_length_b {}\n", b);
-    file_.print("_cell_length_c {}\n", c);
-    file_.print("_cell_angle_alpha {}\n", alpha);
-    file_.print("_cell_angle_beta  {}\n", beta);
-    file_.print("_cell_angle_gamma {}\n", gamma);
+    file_.print("_cell_length_a {}\n", lengths[0]);
+    file_.print("_cell_length_b {}\n", lengths[1]);
+    file_.print("_cell_length_c {}\n", lengths[2]);
+    file_.print("_cell_angle_alpha {}\n", angles[0]);
+    file_.print("_cell_angle_beta  {}\n", angles[1]);
+    file_.print("_cell_angle_gamma {}\n", angles[2]);
     file_.print("loop_\n");
     file_.print("  _symmetry_equiv_pos_as_xyz\n");
     file_.print("  '+x,+y,+z'\n");

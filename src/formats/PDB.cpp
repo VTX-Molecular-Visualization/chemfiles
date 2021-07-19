@@ -1,27 +1,18 @@
 // Chemfiles, a modern library for chemistry file reading and writing
 // Copyright (C) Guillaume Fraux and contributors -- BSD license
 
+#include <cmath>
 #include <cassert>
 #include <cstdint>
 
 #include <map>
-#include <tuple>
 #include <array>
+#include <deque>
 #include <string>
 #include <vector>
-#include <memory>
+#include <utility>
 #include <algorithm>
 #include <unordered_map>
-
-#include "chemfiles/File.hpp"
-#include "chemfiles/Format.hpp"
-#include "chemfiles/Atom.hpp"
-#include "chemfiles/Frame.hpp"
-#include "chemfiles/Property.hpp"
-#include "chemfiles/Residue.hpp"
-#include "chemfiles/Topology.hpp"
-#include "chemfiles/UnitCell.hpp"
-#include "chemfiles/Connectivity.hpp"
 
 #include "chemfiles/types.hpp"
 #include "chemfiles/utils.hpp"
@@ -31,15 +22,39 @@
 #include "chemfiles/string_view.hpp"
 #include "chemfiles/external/optional.hpp"
 
+#include "chemfiles/File.hpp"
+#include "chemfiles/Atom.hpp"
+#include "chemfiles/Frame.hpp"
+#include "chemfiles/Property.hpp"
+#include "chemfiles/Residue.hpp"
+#include "chemfiles/Topology.hpp"
+#include "chemfiles/UnitCell.hpp"
+#include "chemfiles/Connectivity.hpp"
+#include "chemfiles/FormatMetadata.hpp"
+
 #include "chemfiles/formats/PDB.hpp"
 #include "chemfiles/pdb_connectivity.hpp"
 
 using namespace chemfiles;
 
-template<> FormatInfo chemfiles::format_information<PDBFormat>() {
-    return FormatInfo("PDB").with_extension(".pdb").description(
-        "PDB (RCSB Protein Data Bank) text format"
-    );
+template<> const FormatMetadata& chemfiles::format_metadata<PDBFormat>() {
+    static FormatMetadata metadata;
+    metadata.name = "PDB";
+    metadata.extension = ".pdb";
+    metadata.description = "PDB (RCSB Protein Data Bank) text format";
+    metadata.reference = "http://www.wwpdb.org/documentation/file-format";
+
+    metadata.read = true;
+    metadata.write = true;
+    metadata.memory = true;
+
+    metadata.positions = true;
+    metadata.velocities = false;
+    metadata.unit_cell = true;
+    metadata.atoms = true;
+    metadata.bonds = true;
+    metadata.residues = true;
+    return metadata;
 }
 
 bool chemfiles::operator==(const FullResidueId& lhs, const FullResidueId& rhs) {
@@ -67,8 +82,8 @@ bool chemfiles::operator<(const FullResidueId& lhs, const FullResidueId& rhs) {
     }
 }
 
-/// Check the number of digits before the decimal separator to be sure than
-/// we can represen them. In case of error, use the given `context` in the error
+/// Check the number of digits before the decimal separator to be sure than we
+/// can represent them. In case of error, use the given `context` in the error
 /// message
 static void check_values_size(const Vector3D& values, unsigned width, const std::string& context);
 
@@ -213,15 +228,18 @@ void PDBFormat::read_CRYST1(Frame& frame, string_view line) {
         throw format_error("CRYST1 record '{}' is too small", line);
     }
     try {
-        auto a = parse<double>(line.substr(6, 9));
-        auto b = parse<double>(line.substr(15, 9));
-        auto c = parse<double>(line.substr(24, 9));
-        auto alpha = parse<double>(line.substr(33, 7));
-        auto beta = parse<double>(line.substr(40, 7));
-        auto gamma = parse<double>(line.substr(47, 7));
-        auto cell = UnitCell(a, b, c, alpha, beta, gamma);
+        auto lengths = Vector3D(
+            parse<double>(line.substr(6, 9)),
+            parse<double>(line.substr(15, 9)),
+            parse<double>(line.substr(24, 9))
+        );
+        auto angles = Vector3D(
+            parse<double>(line.substr(33, 7)),
+            parse<double>(line.substr(40, 7)),
+            parse<double>(line.substr(47, 7))
+        );
 
-        frame.set_cell(cell);
+        frame.set_cell({lengths, angles});
     } catch (const Error&) {
         throw format_error("could not read CRYST1 record '{}'", line);
     }
@@ -236,7 +254,7 @@ void PDBFormat::read_CRYST1(Frame& frame, string_view line) {
 
 // See http://www.wwpdb.org/documentation/file-format-content/format23/sect5.html
 // for definitions of helix types
-const static char* HELIX_TYPES[10] = {
+static const char* HELIX_TYPES[10] = {
     "right-handed alpha helix",
     "right-handed omega helix",
     "right-handed pi helix",
@@ -334,8 +352,7 @@ void PDBFormat::read_secondary(string_view line, size_t i_start, size_t i_end, s
     secinfo_.insert({ start, std::make_pair(end, "extended") });
 }
 
-void PDBFormat::read_ATOM(Frame& frame, string_view line,
-    bool is_hetatm) {
+void PDBFormat::read_ATOM(Frame& frame, string_view line, bool is_hetatm) {
     assert(line.substr(0, 6) == "ATOM  " || line.substr(0, 6) == "HETATM");
 
     if (line.length() < 54) {
@@ -560,10 +577,10 @@ void PDBFormat::link_standard_residue_bonds(Frame& frame) {
         }
 
         const auto& three_prime_oxygen = atom_name_to_index.find("O3'");
-        const auto& five_prime_phospho = atom_name_to_index.find("P");
+        const auto& five_prime_phosphorus = atom_name_to_index.find("P");
 
         if (link_previous_nucleic &&
-            five_prime_phospho != atom_name_to_index.end() &&
+            five_prime_phosphorus != atom_name_to_index.end() &&
             resid == previous_residue_id + 1 )
         {
             link_previous_nucleic = false;
@@ -663,8 +680,8 @@ Record get_record(string_view line) {
     }
 }
 
-static std::string to_pdb_index(int64_t value, uint64_t width) {
-    auto encoded = encode_hydrid36(width, value + 1);
+static std::string to_pdb_index(int64_t value, size_t width) {
+    auto encoded = encode_hybrid36(width, value + 1);
 
     if (encoded[0] == '*' && (value == MAX_HYBRID36_W4_NUMBER || value == MAX_HYBRID36_W5_NUMBER)) {
         auto type = width == 5 ?
@@ -757,7 +774,7 @@ static bool needs_ter_record(const ResidueInformation& residue) {
 
 // This function adjusts a given index to account for intervening TER records.
 // It does so by determining the position of the greatest TER record in `ters`
-// and uses iterator arithmatic to calculate the adjustment. Note that `ters`
+// and uses iterator arithmetic to calculate the adjustment. Note that `ters`
 // is expected to be sorted
 static int64_t adjust_for_ter_residues(size_t v, const std::vector<size_t>& ters) {
     auto lower = std::lower_bound(ters.begin(), ters.end(), v + 1);
@@ -769,13 +786,15 @@ void PDBFormat::write_next(const Frame& frame) {
     written_ = true;
     file_.print("MODEL {:>4}\n", models_ + 1);
 
-    auto& cell = frame.cell();
-    check_values_size(Vector3D(cell.a(), cell.b(), cell.c()), 9, "cell lengths");
-    file_.print(
-        // Do not try to guess the space group and the z value, just use the
-        // default one.
-        "CRYST1{:9.3f}{:9.3f}{:9.3f}{:7.2f}{:7.2f}{:7.2f} P 1           1\n",
-        cell.a(), cell.b(), cell.c(), cell.alpha(), cell.beta(), cell.gamma());
+    auto lengths = frame.cell().lengths();
+    auto angles = frame.cell().angles();
+    check_values_size(lengths, 9, "cell lengths");
+    check_values_size(angles, 7, "cell angles");
+    // Do not try to guess the space group and the z value, just use the
+    // default one.
+    file_.print("CRYST1{:9.3f}{:9.3f}{:9.3f}{:7.2f}{:7.2f}{:7.2f} P 1           1\n",
+        lengths[0], lengths[1], lengths[2], angles[0], angles[1], angles[2]
+    );
 
     // Only use numbers bigger than the biggest residue id as "resSeq" for
     // atoms without associated residue.
@@ -787,8 +806,10 @@ void PDBFormat::write_next(const Frame& frame) {
         }
     }
 
-    // Used to skip writing unnecessary connect records
-    auto is_atom_record = std::vector<bool>(frame.size(), false);
+    // Used to skip writing unnecessary connect record
+    // use std::deque because std::vector<bool> have a surprising behavior due
+    // to C++ standard requiring it to pack multiple bool in a byte
+    auto is_atom_record = std::deque<bool>(frame.size(), false);
 
     // Used for writing TER records.
     size_t ter_count = 0;

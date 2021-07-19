@@ -6,7 +6,7 @@
 
 #include <new>
 #include <string>
-#include <unordered_map>
+#include <map>
 
 #include "chemfiles/types.hpp"
 #include "chemfiles/exports.h"
@@ -20,7 +20,7 @@ namespace chemfiles {
 /// `Vector3D`.
 class CHFL_EXPORT Property final {
 public:
-    /// Possible types holded by a property
+    /// Possible types held by a property
     enum Kind {
         BOOL = 0,
         DOUBLE = 1,
@@ -129,7 +129,7 @@ public:
         }
     }
 
-    /// Get the kind of property, *i.e.* the type of the holded value
+    /// Get the kind of property, *i.e.* the type of the held value
     ///
     /// @example{property/get_kind.cpp}
     Kind kind() const {
@@ -241,10 +241,13 @@ struct property_metadata<Property::VECTOR3D> {
     }
 };
 
-/// A property map for inclusion in a Frame or an Atom.
+/// A property map for inclusion in a `Frame`, an `Atom` or a `Residue`.
+///
+/// Properties are sorted internally, and iteration over the property will yield
+/// properties in sorting order.
 class CHFL_EXPORT property_map final {
 public:
-    using iterator = std::unordered_map<std::string, Property>::const_iterator;
+    using const_iterator = std::map<std::string, Property>::const_iterator;
 
     property_map() = default;
     property_map(property_map&&) = default;
@@ -269,17 +272,17 @@ public:
     }
 
     /// Get an iterator to the first property in the property map
-    iterator begin() const {
+    const_iterator begin() const {
         return data_.begin();
     }
 
     /// Get an iterator to the end of properties
-    iterator end() const {
+    const_iterator end() const {
         return data_.end();
     }
 
 private:
-    std::unordered_map<std::string, Property> data_;
+    std::map<std::string, Property> data_;
     friend bool operator==(const property_map& lhs, const property_map& rhs);
 };
 

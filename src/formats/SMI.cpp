@@ -2,7 +2,6 @@
 // Copyright (C) Guillaume Fraux and contributors -- BSD license
 
 #include <cmath>
-#include <cctype>
 #include <cstdlib>
 #include <cstdint>
 
@@ -10,21 +9,12 @@
 #include <map>
 #include <stack>
 #include <tuple>
+#include <deque>
 #include <string>
 #include <vector>
-#include <memory>
 #include <iterator>
 #include <algorithm>
 #include <unordered_map>
-
-#include "chemfiles/File.hpp"
-#include "chemfiles/Format.hpp"
-#include "chemfiles/Atom.hpp"
-#include "chemfiles/Frame.hpp"
-#include "chemfiles/Property.hpp"
-#include "chemfiles/Residue.hpp"
-#include "chemfiles/Topology.hpp"
-#include "chemfiles/Connectivity.hpp"
 
 #include "chemfiles/utils.hpp"
 #include "chemfiles/parse.hpp"
@@ -33,18 +23,41 @@
 #include "chemfiles/string_view.hpp"
 #include "chemfiles/external/optional.hpp"
 
+#include "chemfiles/File.hpp"
+#include "chemfiles/Atom.hpp"
+#include "chemfiles/Frame.hpp"
+#include "chemfiles/Property.hpp"
+#include "chemfiles/Residue.hpp"
+#include "chemfiles/Topology.hpp"
+#include "chemfiles/Connectivity.hpp"
+#include "chemfiles/FormatMetadata.hpp"
+
 #include "chemfiles/formats/SMI.hpp"
 
 using namespace chemfiles;
 
-template<> FormatInfo chemfiles::format_information<SMIFormat>() {
-    return FormatInfo("SMI").with_extension(".smi").description(
-        "SMI text format"
-    );
+template<> const FormatMetadata& chemfiles::format_metadata<SMIFormat>() {
+    static FormatMetadata metadata;
+    metadata.name = "SMI";
+    metadata.extension = ".smi";
+    metadata.description = "SMI text format";
+    metadata.reference = "http://opensmiles.org/";
+
+    metadata.read = true;
+    metadata.write = true;
+    metadata.memory = true;
+
+    metadata.positions = false;
+    metadata.velocities = false;
+    metadata.unit_cell = false;
+    metadata.atoms = true;
+    metadata.bonds = true;
+    metadata.residues = true;
+    return metadata;
 }
 
 /// See if all values in array are true
-static bool all(const std::vector<bool>& vec);
+static bool all(const std::deque<bool>& vec);
 
 static bool is_aromatic_organic(char c) {
     switch (c) {
@@ -79,14 +92,14 @@ static bool is_chirality_tag(string_view s) {
 /// Attempts to read a number from the string. The `start` argument is updated
 /// to the last numberic character in `smiles`.
 static size_t read_number(string_view smiles, size_t& start) {
-    if (start >= smiles.size() || std::isdigit(smiles[start]) == 0) {
+    if (start >= smiles.size() || !is_ascii_digit(smiles[start])) {
         start--;
         return 0;
     }
     size_t old = start;
     do {
         start++;
-    } while (start < smiles.size() && (std::isdigit(smiles[start]) != 0));
+    } while (start < smiles.size() && is_ascii_digit(smiles[start]));
     start--;
     return parse<size_t>(smiles.substr(old, start - old + 1));
 }
@@ -102,7 +115,7 @@ static string_view read_property_atom(string_view smiles, size_t& start) {
     } else {
         do {
             start++;
-        } while( start < smiles.size() && std::islower(smiles[start]) != 0);
+        } while (start < smiles.size() && is_ascii_lowercase(smiles[start]));
         return smiles.substr(old, start - old);
     }
 }
@@ -124,12 +137,12 @@ Atom& SMIFormat::add_atom(Topology& topology, string_view atom_name) {
 void SMIFormat::process_property_list(Topology& topology, string_view smiles) {
     size_t i = 0;
     double mass = 0.0;
-    if (std::isdigit(smiles[i]) != 0) {
+    if (is_ascii_digit(smiles[i])) {
         mass = static_cast<double>(read_number(smiles, i));
         ++i;
     }
 
-    bool is_aromatic = std::islower(smiles[i]) != 0;
+    bool is_aromatic = is_ascii_lowercase(smiles[i]);
     auto name = read_property_atom(smiles, i);
     auto& new_atom = this->add_atom(topology, name);
 
@@ -232,7 +245,7 @@ void SMIFormat::read_next(Frame& frame) {
     size_t i;
     for (i = 0; i < smiles.size(); ++i) {
 
-        if (std::isblank(smiles[i]) != 0) {
+        if (is_ascii_whitespace(smiles[i])) {
             break;
         }
 
@@ -268,7 +281,7 @@ void SMIFormat::read_next(Frame& frame) {
         // We are not in a property list!
         // Therefore, if something is lowercase, then it must be
         // a single character element in the organic subset.
-        if (std::islower(smiles[i]) != 0) {
+        if (is_ascii_lowercase(smiles[i])) {
             if (!is_aromatic_organic(smiles[i])) {
                 throw format_error("SMI Reader: aromatic element not found: '{}'", smiles[i]);
             }
@@ -280,7 +293,7 @@ void SMIFormat::read_next(Frame& frame) {
         // We are not in a property list!
         // Therefore, aliphatic atoms can be written without brackets.
         // Br and Cl are tricky as, but the rest are single character
-        if (std::isupper(smiles[i]) != 0) {
+        if (is_ascii_uppercase(smiles[i])) {
             size_t element_length = 1;
             if (smiles[i] == 'C'
                 && i + 1 < smiles.size()
@@ -303,7 +316,7 @@ void SMIFormat::read_next(Frame& frame) {
             continue;
         }
 
-        if (std::isdigit(smiles[i]) != 0) {
+        if (is_ascii_digit(smiles[i])) {
             auto ring_id = static_cast<size_t>(smiles[i] - '0');
             check_ring_(topology, ring_id);
             continue;
@@ -380,7 +393,7 @@ void SMIFormat::read_next(Frame& frame) {
     }
 
     if (!rings_ids_.empty()) {
-        throw format_error("SMI Reader: unclosed ringid '{}'", rings_ids_.begin()->first);
+        throw format_error("SMI Reader: unclosed ring id '{}'", rings_ids_.begin()->first);
     }
 
     frame.resize(topology.size());
@@ -397,7 +410,7 @@ static void find_rings(
     std::unordered_map<size_t, size_t>& ring_atoms) {
 
     ring_atoms.clear();
-    std::vector<bool> hit_atoms(adj_list.size(), false);
+    std::deque<bool> hit_atoms(adj_list.size(), false);
     std::set<Bond> ring_bonds;
 
     while (!all(hit_atoms)) {
@@ -416,8 +429,8 @@ static void find_rings(
         // for the 'current' atom.
         // Not guaranteed to fast, nor efficient, but just to work
         // Also not guaranteed to find the SSSR, but it will find all rings
-        // needed for a given structure to be writen as SMILES
-        // adj_list The adjacentcy list graph
+        // needed for a given structure to be written as SMILES
+        // adj_list The adjacency list graph
         // hit_atoms Atoms already encountered
         // ring_bonds Bonds already known to ring forming bonds
         // ring_atoms Map from an atom to the number of rings it forms
@@ -458,7 +471,7 @@ static void find_rings(
 
                 // We've seen this neighbor before! Ring found
                 // but only if we have NOT processed the current atom as this
-                // prevents rings from being created from mutliple directions.
+                // prevents rings from being created from multiple directions.
                 if (hit_atoms[neighbor] && !hit_atoms[current_atom]) {
 
                     // Don't process the same ring connection twice
@@ -557,7 +570,7 @@ static void write_atom_smiles(TextFile& file, const Atom& atom) {
         if (type.size() > 1) {
             needs_brackets = true;
         }
-        std::transform(type.begin(), type.end(), type.begin(), ::tolower);
+        to_ascii_lowercase(type);
     }
 
     if (needs_brackets) {
@@ -596,7 +609,7 @@ static void write_atom_smiles(TextFile& file, const Atom& atom) {
     case 7:
         if (chirality.find("CCW") == 0
             && is_chirality_tag(chirality.substr(4, 2))
-            && std::isdigit(chirality[6]) != 0 ) {
+            && is_ascii_digit(chirality[6])) {
             is_good_tag = true;
             file.print("@{}", chirality.substr(4));
         }
@@ -604,8 +617,8 @@ static void write_atom_smiles(TextFile& file, const Atom& atom) {
     case 8:
         if (chirality.find("CCW") == 0
             && is_chirality_tag(chirality.substr(4, 2))
-            && std::isdigit(chirality[6]) != 0
-            && std::isdigit(chirality[7]) != 0) {
+            && is_ascii_digit(chirality[6])
+            && is_ascii_digit(chirality[7])) {
             is_good_tag = true;
             file.print("@{}", chirality.substr(4));
         }
@@ -683,7 +696,7 @@ void SMIFormat::write_next(const Frame& frame) {
 
     find_rings(adj_list_, ring_atoms_);
 
-    std::vector<bool> written(frame.size(), false);
+    std::deque<bool> written(frame.size(), false);
     size_t branch_stack = 0;
 
     ring_stack_.clear();
@@ -747,7 +760,7 @@ void SMIFormat::write_next(const Frame& frame) {
                 }
             }
 
-            // Avoid the prining of branch begin/end
+            // Avoid the printing of branch begin/end
             size_t ring_end = 0;
 
             // Find all ring connections first
@@ -791,7 +804,7 @@ void SMIFormat::write_next(const Frame& frame) {
                 }
 
                 // To print a start bracket, we need to be branching (> 2 non-ring bonds)
-                // and we don't want to brank the last neighbor printed
+                // and we don't want to branch the last neighbor printed
                 auto needs_to_branch = neighbors_printed != 0 && neighbors_printed > ring_start;
 
                 // Depth First Search like recursion
@@ -834,7 +847,7 @@ optional<uint64_t> SMIFormat::forward() {
     return position;
 }
 
-bool all(const std::vector<bool>& vec) {
+bool all(const std::deque<bool>& vec) {
     for (auto i : vec) {
         if (!i) {
             return false;

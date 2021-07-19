@@ -2,15 +2,14 @@
 // Copyright (C) Guillaume Fraux and contributors -- BSD license
 
 #include <cassert>
-#include <cctype>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
 
 #include "chemfiles/Atom.hpp"
-#include "chemfiles/Configuration.hpp"
 #include "chemfiles/periodic_table.hpp"
 
+#include "chemfiles/utils.hpp"
 #include "chemfiles/external/optional.hpp"
 
 using namespace chemfiles;
@@ -19,10 +18,10 @@ static std::string normalize_atomic_name(const std::string& type) {
     assert(type.length() <= 2);
     std::string normalized = type;
     if (type.length() == 1) {
-        normalized[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(normalized[0])));
+        normalized[0] = to_ascii_uppercase(normalized[0]);
     } else if (type.length() == 2) {
-        normalized[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(normalized[0])));
-        normalized[1] = static_cast<char>(std::tolower(static_cast<unsigned char>(normalized[1])));
+        normalized[0] = to_ascii_uppercase(normalized[0]);
+        normalized[1] = to_ascii_lowercase(normalized[1]);
     }
     return normalized;
 }
@@ -43,13 +42,7 @@ optional<const AtomicData&> chemfiles::find_in_periodic_table(const std::string&
 }
 
 static optional<const AtomicData&> find_element(const std::string& type) {
-    // Look in the configuration first, and then in the periodic table
-    auto element = Configuration::atom_data(type);
-    if (element) {
-        return element;
-    } else {
-        return find_in_periodic_table(type);
-    }
+    return find_in_periodic_table(type);
 }
 
 Atom::Atom(std::string name): name_(std::move(name)), type_(name_) {

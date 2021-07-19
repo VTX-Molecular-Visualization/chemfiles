@@ -7,18 +7,8 @@
 #include <array>
 #include <vector>
 #include <string>
-#include <memory>
 #include <utility>
 #include <algorithm>
-
-#include "chemfiles/File.hpp"
-#include "chemfiles/Format.hpp"
-#include "chemfiles/Atom.hpp"
-#include "chemfiles/Frame.hpp"
-#include "chemfiles/Property.hpp"
-#include "chemfiles/Residue.hpp"
-#include "chemfiles/Topology.hpp"
-#include "chemfiles/UnitCell.hpp"
 
 #include "chemfiles/types.hpp"
 #include "chemfiles/utils.hpp"
@@ -27,6 +17,15 @@
 #include "chemfiles/string_view.hpp"
 #include "chemfiles/external/optional.hpp"
 
+#include "chemfiles/File.hpp"
+#include "chemfiles/Atom.hpp"
+#include "chemfiles/Frame.hpp"
+#include "chemfiles/Property.hpp"
+#include "chemfiles/Residue.hpp"
+#include "chemfiles/Topology.hpp"
+#include "chemfiles/UnitCell.hpp"
+#include "chemfiles/FormatMetadata.hpp"
+
 // WARNING UGLY HACK!
 #include "chemfiles/formats/PDB.hpp"
 
@@ -34,10 +33,24 @@
 
 using namespace chemfiles;
 
-template<> FormatInfo chemfiles::format_information<mmCIFFormat>() {
-    return FormatInfo("mmCIF").with_extension(".mmcif").description(
-        "mmCIF (Crystallographic Information Framework) for MacroMolecules"
-    );
+template<> const FormatMetadata& chemfiles::format_metadata<mmCIFFormat>() {
+    static FormatMetadata metadata;
+    metadata.name = "mmCIF";
+    metadata.extension = ".mmcif";
+    metadata.description = "Crystallographic Information Framework files for MacroMolecules";
+    metadata.reference = "http://mmcif.wwpdb.org/";
+
+    metadata.read = true;
+    metadata.write = true;
+    metadata.memory = true;
+
+    metadata.positions = true;
+    metadata.velocities = false;
+    metadata.unit_cell = true;
+    metadata.atoms = true;
+    metadata.bonds = true;
+    metadata.residues = true;
+    return metadata;
 }
 
 /// CIF files store which digits are insignificant, we need to remove this
@@ -52,16 +65,11 @@ void mmCIFFormat::init_() {
         throw file_error("cannot open mmCIF files in append ('a') mode");
     }
 
-    double a = 0;
-    double b = 0;
-    double c = 0;
-    double alpha = 90;
-    double beta = 90;
-    double gamma = 90;
+    Vector3D lengths;
+    Vector3D angles = {90, 90, 90};
 
     bool in_loop = false;
     size_t current_index = 0;
-
     while (!file_.eof()) {
         auto line = file_.readline();
 
@@ -81,27 +89,27 @@ void mmCIFFormat::init_() {
         }
 
         if (line_split[0] == "_cell_length_a" || line_split[0] == "_cell.length_a") {
-            a = cif_to_double(line_split[1].to_string());
+            lengths[0] = cif_to_double(line_split[1].to_string());
         }
 
         if (line_split[0] == "_cell_length_b" || line_split[0] == "_cell.length_b") {
-            b = cif_to_double(line_split[1].to_string());
+            lengths[1] = cif_to_double(line_split[1].to_string());
         }
 
         if (line_split[0] == "_cell_length_c" || line_split[0] == "_cell.length_c") {
-            c = cif_to_double(line_split[1].to_string());
+            lengths[2] = cif_to_double(line_split[1].to_string());
         }
 
         if (line_split[0] == "_cell_angle_alpha" || line_split[0] == "_cell.angle_alpha") {
-            alpha = cif_to_double(line_split[1].to_string());
+            angles[0] = cif_to_double(line_split[1].to_string());
         }
 
         if (line_split[0] == "_cell_angle_beta" || line_split[0] == "_cell.angle_beta") {
-            beta = cif_to_double(line_split[1].to_string());
+            angles[1] = cif_to_double(line_split[1].to_string());
         }
 
         if (line_split[0] == "_cell_angle_gamma" || line_split[0] == "_cell.angle_gamma") {
-            gamma = cif_to_double(line_split[1].to_string());
+            angles[2] = cif_to_double(line_split[1].to_string());
         }
 
         if (line_split[0] == "_entry.id") {
@@ -109,14 +117,14 @@ void mmCIFFormat::init_() {
         }
 
         if (line_split[0] == "_struct.title") {
-            auto trimed = trim(line.substr(13));
-            name_ = trimed.size() > 2 ?
-                    trimed.substr(1, trimed.size() - 2).to_string() : "";
+            auto trimmed = trim(line.substr(13));
+            name_ = trimmed.size() > 2 ?
+                    trimmed.substr(1, trimmed.size() - 2).to_string() : "";
         }
 
         if (in_loop && line_split[0].find("_atom_site") != std::string::npos) {
             auto atom_label = line_split[0].substr(11).to_string();
-            tolower(atom_label);
+            to_ascii_lowercase(atom_label);
             atom_site_map_[atom_label] = current_index++;
             break;
         }
@@ -126,7 +134,7 @@ void mmCIFFormat::init_() {
         throw format_error("no atom sites found in mmCIF file");
     }
 
-    cell_ = UnitCell(a, b, c, alpha, beta, gamma);
+    cell_ = UnitCell(lengths, angles);
 
     auto position = file_.tellpos();
     auto line = file_.readline();
@@ -134,7 +142,7 @@ void mmCIFFormat::init_() {
     do {
         if (line.find("_atom_site") != std::string::npos) {
             auto atom_label = trim(line).substr(11).to_string();
-            tolower(atom_label);
+            to_ascii_lowercase(atom_label);
             atom_site_map_[atom_label] = current_index++;
 
             position = file_.tellpos();
@@ -382,12 +390,14 @@ void mmCIFFormat::write(const Frame& frame) {
     if (models_ == 0) {
         file_.print("# generated by Chemfiles\n");
         file_.print("#\n");
-        file_.print("_cell.length_a {}\n", frame.cell().a());
-        file_.print("_cell.length_b {}\n", frame.cell().b());
-        file_.print("_cell.length_c {}\n", frame.cell().c());
-        file_.print("_cell.length_alpha {}\n", frame.cell().alpha());
-        file_.print("_cell.length_beta  {}\n", frame.cell().beta());
-        file_.print("_cell.length_gamma {}\n", frame.cell().gamma());
+        auto lengths = frame.cell().lengths();
+        file_.print("_cell.length_a {}\n", lengths[0]);
+        file_.print("_cell.length_b {}\n", lengths[1]);
+        file_.print("_cell.length_c {}\n", lengths[2]);
+        auto angles = frame.cell().angles();
+        file_.print("_cell.length_alpha {}\n", angles[0]);
+        file_.print("_cell.length_beta  {}\n", angles[1]);
+        file_.print("_cell.length_gamma {}\n", angles[2]);
         file_.print("#\n");
         file_.print("loop_\n");
         file_.print("_atom_site.group_PDB\n");

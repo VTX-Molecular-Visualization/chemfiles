@@ -1,12 +1,17 @@
 cmake_minimum_required(VERSION 2.8.12)
 set(CMAKE_USER_MAKE_RULES_OVERRIDE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/InitRules.cmake")
 
+project(chemfiles C CXX)
+
 if(NOT "${LAST_CMAKE_VERSION}" VERSION_EQUAL ${CMAKE_VERSION})
     set(LAST_CMAKE_VERSION ${CMAKE_VERSION} CACHE INTERNAL "Last version of cmake used to configure")
-    message(STATUS "Running CMake version ${CMAKE_VERSION}")
-endif()
+    if (${CMAKE_CURRENT_SOURCE_DIR} STREQUAL ${CMAKE_SOURCE_DIR})
+        message(STATUS "Running CMake version ${CMAKE_VERSION}")
 
-project(chemfiles C CXX)
+        math(EXPR POINTER_SIZE "${CMAKE_SIZEOF_VOID_P} * 8")
+        message(STATUS "Compiling to ${POINTER_SIZE}-bit code")
+    endif()
+endif()
 
 set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${PROJECT_SOURCE_DIR}/cmake")
 if (POLICY CMP0042)
@@ -43,8 +48,8 @@ option(CHFL_SYSTEM_BZIP2 "Use the system bzip2 instead of the internal one" OFF)
 option(CHFL_BUILD_DOCTESTS "Build documentation tests as well as unit tests." ON)
 
 set(LIB_INSTALL_DIR "lib" CACHE PATH "Path relative to CMAKE_INSTALL_PREFIX where to install libraries")
-set(BIN_INSTALL_DIR "bin" CACHE PATH "Path relative to CMAKE_INSTALL_PREFIX where to install headers")
-set(INCLUDE_INSTALL_DIR "include" CACHE PATH "Path relative to CMAKE_INSTALL_PREFIX where to install DLL/binaries")
+set(BIN_INSTALL_DIR "bin" CACHE PATH "Path relative to CMAKE_INSTALL_PREFIX where to install DLL/binaries")
+set(INCLUDE_INSTALL_DIR "include" CACHE PATH "Path relative to CMAKE_INSTALL_PREFIX where to install headers")
 
 mark_as_advanced(CHFL_BUILD_DOCTESTS)
 
@@ -119,6 +124,11 @@ if(MSVC)
     target_compile_definitions(chemfiles_objects PRIVATE -D_SCL_SECURE_NO_WARNINGS)
 endif()
 
+if(WIN32)
+    target_compile_definitions(chemfiles_objects PRIVATE -DWIN32_LEAN_AND_MEAN)
+    target_compile_definitions(chemfiles_objects PRIVATE -DNOMINMAX)
+endif()
+
 target_use_clang_tidy(chemfiles_objects)
 target_use_include_what_you_use(chemfiles_objects)
 
@@ -138,11 +148,6 @@ set(CHEMFILES_OBJECTS
 # Add the main chemfiles library
 add_library(chemfiles ${CHEMFILES_OBJECTS})
 
-if(WIN32)
-    # MMTF (and thus chemfiles) uses endianness conversion function from ws2_32
-    target_link_libraries(chemfiles ws2_32)
-endif()
-
 set_property(TARGET chemfiles PROPERTY VERSION ${CHEMFILES_VERSION_SHORT})
 set_property(TARGET chemfiles PROPERTY SOVERSION ${CHEMFILES_VERSION_SHORT})
 
@@ -158,11 +163,10 @@ target_link_libraries(chemfiles
     ${LIBLZMA_LIBRARY}
     ${BZIP2_LIBRARIES}
 )
-if(WIN32)
-    target_link_libraries(chemfiles ws2_32)
-endif()
 
 if(WIN32)
+    # MMTF (and thus chemfiles) uses endianness conversion function from ws2_32
+    target_link_libraries(chemfiles ws2_32)
     set(CHEMFILES_WINDOWS ON)
 endif()
 

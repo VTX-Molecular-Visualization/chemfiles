@@ -25,7 +25,7 @@ evaluating triplet selection will return a list of triplets of atomic indexes
 (and correspondingly for pairs and quadruplets).
 
 .. _VMD: https://www.ks.uiuc.edu/Research/vmd/current/ug/node89.html
-.. _MDAnalysis: https://www.mdanalysis.org/docs/documentation_pages/selections.html
+.. _MDAnalysis: https://docs.mdanalysis.org/stable/documentation_pages/selections.html
 
 The number of atoms to select together is indicated in chemfiles by a context,
 separated from the main selection by a colon. Seven contexts are available:
@@ -257,9 +257,7 @@ Here are all the available numeric values
 
     Evaluates to the mass of the atom being matched. For atoms with a type from
     the periodic table, the element mass is used as default. The atom mass can
-    also be set manually, either directly with
-    :cpp:func:`chemfiles::Atom::set_mass`, or using a :ref:`configuration file
-    <configuration>`.
+    also be set manually with :cpp:func:`chemfiles::Atom::set_mass`.
 
     |multiple-atoms-#i|
 

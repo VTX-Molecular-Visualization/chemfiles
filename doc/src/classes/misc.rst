@@ -14,6 +14,14 @@ Basic types
 .. doxygenclass:: chemfiles::Matrix3D
     :members:
 
+Format list and Metadata
+------------------------
+
+.. doxygenfunction:: chemfiles::formats_list
+
+.. doxygenclass:: chemfiles::FormatMetadata
+    :members:
+
 Errors handling
 ---------------
 
@@ -83,11 +91,3 @@ each warning event.
 .. doxygenfunction:: chemfiles::set_warning_callback
 
 .. doxygentypedef:: chemfiles::warning_callback_t
-
-Configuration files
--------------------
-
-You can add more :ref:`configuration <configuration>` file to chemfiles with
-:cpp:func:`chemfiles::add_configuration`.
-
-.. doxygenfunction:: chemfiles::add_configuration

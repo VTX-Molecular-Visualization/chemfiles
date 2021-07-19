@@ -22,20 +22,20 @@ TEST_CASE("Read files in PDB format") {
 
         REQUIRE(frame.size() == 297);
         auto positions = frame.positions();
-        CHECK(approx_eq(positions[0], Vector3D(0.417, 8.303, 11.737), 1e-3));
-        CHECK(approx_eq(positions[296], Vector3D(6.664, 11.6148, 12.961), 1e-3));
+        CHECK(approx_eq(positions[0], {0.417, 8.303, 11.737}, 1e-3));
+        CHECK(approx_eq(positions[296], {6.664, 11.6148, 12.961}, 1e-3));
 
         auto cell = frame.cell();
         CHECK(cell.shape() == UnitCell::ORTHORHOMBIC);
-        CHECK(approx_eq(cell.a(), 15.0, 1e-5));
+        CHECK(approx_eq(cell.lengths(), {15.0, 15.0, 15.0}));
 
         file.read(); // Skip a frame
         frame = file.read();
 
         REQUIRE(frame.size() == 297);
         positions = frame.positions();
-        CHECK(approx_eq(positions[0], Vector3D(0.299, 8.310, 11.721), 1e-4));
-        CHECK(approx_eq(positions[296], Vector3D(6.798, 11.509, 12.704), 1e-4));
+        CHECK(approx_eq(positions[0], {0.299, 8.310, 11.721}, 1e-4));
+        CHECK(approx_eq(positions[296], {6.798, 11.509, 12.704}, 1e-4));
     }
 
     SECTION("Read a specific step") {
@@ -44,18 +44,18 @@ TEST_CASE("Read files in PDB format") {
         auto frame = file.read_step(2);
         REQUIRE(frame.size() == 297);
         auto positions = frame.positions();
-        CHECK(approx_eq(positions[0], Vector3D(0.299, 8.310, 11.721), 1e-4));
-        CHECK(approx_eq(positions[296], Vector3D(6.798, 11.509, 12.704), 1e-4));
+        CHECK(approx_eq(positions[0], {0.299, 8.310, 11.721}, 1e-4));
+        CHECK(approx_eq(positions[296], {6.798, 11.509, 12.704}, 1e-4));
 
         frame = file.read_step(0);
         REQUIRE(frame.size() == 297);
         positions = frame.positions();
-        CHECK(approx_eq(positions[0], Vector3D(0.417, 8.303, 11.737), 1e-3));
-        CHECK(approx_eq(positions[296], Vector3D(6.664, 11.6148, 12.961), 1e-3));
+        CHECK(approx_eq(positions[0], {0.417, 8.303, 11.737}, 1e-3));
+        CHECK(approx_eq(positions[296], {6.664, 11.6148, 12.961}, 1e-3));
 
         auto cell = frame.cell();
         CHECK(cell.shape() == UnitCell::ORTHORHOMBIC);
-        CHECK(approx_eq(cell.a(), 15.0, 1e-5));
+        CHECK(cell.lengths() == Vector3D(15.0, 15.0, 15.0));
     }
 
     SECTION("Read bonds") {
@@ -84,6 +84,27 @@ TEST_CASE("Read files in PDB format") {
 
         CHECK(contains(topology.dihedrals(), Dihedral(64, 62, 58, 53)));
         CHECK(contains(topology.dihedrals(), Dihedral(22, 21, 23, 33)));
+    }
+
+    SECTION("Support short records") {
+        auto file = Trajectory("data/pdb/short-cryst1.pdb");
+        auto frame = file.read();
+
+        CHECK(frame.size() == 9);
+
+        CHECK(frame.cell().shape() == UnitCell::ORTHORHOMBIC);
+        CHECK(frame.cell().lengths() == Vector3D(15.0, 15.0, 15.0));
+    }
+
+    SECTION("Read triclinic cells") {
+        auto file = Trajectory("data/pdb/1vln-triclinic.pdb");
+        auto frame = file.read();
+        CHECK(frame.size() == 14520);
+
+        auto cell = frame.cell();
+        CHECK(cell.shape() == UnitCell::TRICLINIC);
+        CHECK(approx_eq(cell.lengths(), {78.8, 79.3, 133.3}, 1e-12));
+        CHECK(approx_eq(cell.angles(), {97.1, 90.2, 97.5}, 1e-12));
     }
 
     SECTION("Read frame properties") {
@@ -345,30 +366,30 @@ TEST_CASE("Problematic PDB files") {
         // some secondary structure residues are not in the expected order
         auto file = Trajectory("data/pdb/1htq.pdb");
         auto frame = file.read();
-        auto& topo = frame.topology();
+        auto& topology = frame.topology();
 
         // The residue IDs are out of order, but still read correctly
-        auto& first_residue = *topo.residue_for_atom(2316);
+        auto& first_residue = *topology.residue_for_atom(2316);
         CHECK((*first_residue.id()) == 503);
         CHECK(first_residue.get("secondary_structure")->as_string() == "right-handed 3-10 helix");
 
         // The 'next' residue
-        auto& second_residue = *topo.residue_for_atom(2320);
+        auto& second_residue = *topology.residue_for_atom(2320);
         CHECK((*second_residue.id()) == 287);
         CHECK(second_residue.get("secondary_structure")->as_string() == "right-handed 3-10 helix");
 
         // The 'third' residue
-        auto& third_residue = *topo.residue_for_atom(2332);
+        auto& third_residue = *topology.residue_for_atom(2332);
         CHECK((*third_residue.id()) == 288);
         CHECK(third_residue.get("secondary_structure")->as_string() == "right-handed 3-10 helix");
 
         // The 'last' residue
-        auto& final_residue = *topo.residue_for_atom(2337);
+        auto& final_residue = *topology.residue_for_atom(2337);
         CHECK((*final_residue.id()) == 289);
         CHECK(final_residue.get("secondary_structure")->as_string() == "right-handed 3-10 helix");
 
         // No secondary structure after the chain
-        auto & no_ss_residue = *topo.residue_for_atom(2341);
+        auto & no_ss_residue = *topology.residue_for_atom(2341);
         CHECK((*no_ss_residue.id()) == 290);
         CHECK(no_ss_residue.get("secondary_structure") == nullopt);
     }
@@ -378,29 +399,29 @@ TEST_CASE("Problematic PDB files") {
         // some secondary structure residues are not in the expected order
         auto file = Trajectory("data/pdb/1avg.pdb");
         auto frame = file.read();
-        auto& topo = frame.topology();
+        auto& topology = frame.topology();
 
-        auto & pre_residue = *topo.residue_for_atom(75);
+        auto & pre_residue = *topology.residue_for_atom(75);
         CHECK((*pre_residue.id()) == 1);
         CHECK(pre_residue.get("insertion_code")->as_string() == "D");
         CHECK(pre_residue.get("secondary_structure") == nullopt);
 
-        auto& first_residue = *topo.residue_for_atom(79);
+        auto& first_residue = *topology.residue_for_atom(79);
         CHECK((*first_residue.id()) == 1);
         CHECK(first_residue.get("insertion_code")->as_string() == "C");
         CHECK(first_residue.get("secondary_structure")->as_string() == "right-handed 3-10 helix");
 
-        auto& second_residue = *topo.residue_for_atom(88);
+        auto& second_residue = *topology.residue_for_atom(88);
         CHECK((*second_residue.id()) == 1);
         CHECK(second_residue.get("insertion_code")->as_string() == "B");
         CHECK(second_residue.get("secondary_structure")->as_string() == "right-handed 3-10 helix");
 
-        auto& third_residue = *topo.residue_for_atom(93);
+        auto& third_residue = *topology.residue_for_atom(93);
         CHECK((*third_residue.id()) == 1);
         CHECK(third_residue.get("insertion_code")->as_string() == "A");
         CHECK(third_residue.get("secondary_structure")->as_string() == "right-handed 3-10 helix");
 
-        auto& fourth_residue = *topo.residue_for_atom(101);
+        auto& fourth_residue = *topology.residue_for_atom(101);
         CHECK((*fourth_residue.id()) == 1);
         CHECK(fourth_residue.get("insertion_code") == nullopt);
         CHECK(fourth_residue.get("secondary_structure") == nullopt);
@@ -408,7 +429,7 @@ TEST_CASE("Problematic PDB files") {
 
     SECTION("File generated by ASE") {
         // The file is a bit strange already, and had a bug where not all steps
-        // would be found. The bug camed from an interaction with buffering of
+        // would be found. The bug cammed from an interaction with buffering of
         // files, and the usage of string_view in TextFile::readline().
         auto file = Trajectory("data/pdb/ase.pdb");
         REQUIRE(file.nsteps() == 156);
@@ -448,7 +469,7 @@ TEST_CASE("Write files in PDB format") {
     "ENDMDL\n"
     "END\n";
 
-    auto frame = Frame(UnitCell(22));
+    auto frame = Frame(UnitCell({22, 22, 22}));
     frame.add_atom(Atom("A"), {1, 2, 3});
     frame.add_atom(Atom("B"), {1, 2, 3});
     frame.add_atom(Atom("C"), {1, 2, 3});
@@ -516,12 +537,12 @@ TEST_CASE("PDB files with big values") {
 
         auto frame = Frame();
         frame.resize(1);
-        frame.set_cell(UnitCell(1234567890));
-        CHECK_THROWS_AS(trajectory.write(frame), FormatError);
+        frame.set_cell(UnitCell({1234567890, 1234567890, 1234567890}));
+        CHECK_THROWS_WITH(trajectory.write(frame), "value in cell lengths is too big for representation in PDB format");
 
-        frame.set_cell(UnitCell(12));
+        frame.set_cell(UnitCell({12, 12, 12}));
         frame.positions()[0] = Vector3D(123456789, 2, 3);
-        CHECK_THROWS_AS(trajectory.write(frame), FormatError);
+        CHECK_THROWS_WITH(trajectory.write(frame), "value in atomic position is too big for representation in PDB format");
     }
 
     SECTION("Default residues") {
@@ -610,7 +631,7 @@ TEST_CASE("Read and write files in memory") {
 
         auto cell = frame.cell();
         CHECK(cell.shape() == UnitCell::ORTHORHOMBIC);
-        CHECK(approx_eq(cell.a(), 15.0, 1e-5));
+        CHECK(approx_eq(cell.lengths(), {15.0, 15.0, 15.0}, 1e-5));
 
         file.read(); // Skip a frame
         frame = file.read();

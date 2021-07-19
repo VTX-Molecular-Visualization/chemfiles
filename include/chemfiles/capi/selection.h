@@ -40,8 +40,8 @@ CHFL_EXPORT CHFL_SELECTION* chfl_selection_copy(const CHFL_SELECTION* selection)
 ///
 /// The size of a selection is the number of atoms we are selecting together.
 /// This value is 1 for the 'atom' context, 2 for the 'pair' and 'bond' context,
-/// 3 for the 'three' and 'angles' contextes and 4 for the 'four' and 'dihedral'
-/// contextes.
+/// 3 for the 'three' and 'angles' contexts and 4 for the 'four' and 'dihedral'
+/// contexts.
 ///
 /// @example{capi/chfl_selection/size.c}
 /// @return The operation status code. You can use `chfl_last_error` to learn
@@ -75,20 +75,6 @@ CHFL_EXPORT chfl_status chfl_selection_string(
 CHFL_EXPORT chfl_status chfl_selection_evaluate(
     CHFL_SELECTION* selection, const CHFL_FRAME* frame, uint64_t* n_matches
 );
-
-/// Maximal size for a selection match
-#define CHFL_MAX_SELECTION_SIZE 4
-
-/// A `chfl_match` is a set of atomic indexes matching a given selection. The
-/// size of a match depends on the associated selection, and can vary from 1 to
-/// `CHFL_MAX_SELECTION_SIZE`.
-typedef struct {  // NOLINT: this is both a C and C++ file
-    /// The actual size of the match. Elements in `atoms` are significant up
-    /// to this value, and filled with `(uint64_t)-1` for all the other values.
-    uint64_t size;
-    /// Atomic indexes matching the associated selection
-    uint64_t atoms[CHFL_MAX_SELECTION_SIZE];
-} chfl_match;
 
 /// Get the matches for a `selection` after a call to `chfl_selection_evaluate`,
 /// in `matches`.

@@ -12,6 +12,7 @@
 
 #include "chemfiles/File.hpp"
 #include "chemfiles/Format.hpp"
+
 #include "chemfiles/Residue.hpp"
 #include "chemfiles/string_view.hpp"
 #include "chemfiles/external/optional.hpp"
@@ -19,6 +20,7 @@
 namespace chemfiles {
 class Frame;
 class MemoryBuffer;
+class FormatMetadata;
 
 /// Full identification of residues, including everything needed
 struct FullResidueId {
@@ -35,13 +37,11 @@ struct FullResidueId {
 bool operator==(const FullResidueId& lhs, const FullResidueId& rhs);
 bool operator<(const FullResidueId& lhs, const FullResidueId& rhs);
 
-/// [PDB][PDB] file format reader and writer.
+/// PDB file format reader and writer.
 ///
-/// For multi-frame trajectories, we support both the convention from VMD to 
-/// use multiple `END` records separating the steps; or the use of multiple 
+/// For multi-frame trajectories, we support both the convention from VMD to
+/// use multiple `END` records separating the steps; or the use of multiple
 /// `MODEL`/`ENDMODEL` pairs.
-///
-/// [PDB]: ftp://ftp.wwpdb.org/pub/pdb/doc/format_descriptions/Format_v33_A4.pdf
 class PDBFormat final: public TextFormat {
 public:
     PDBFormat(std::string path, File::Mode mode, File::Compression compression):
@@ -84,7 +84,7 @@ private:
     /// List of all atom offsets. This maybe pushed in read_ATOM or if a TER
     /// record is found. It is reset every time a frame is read.
     std::vector<size_t> atom_offsets_;
-    /// Did we wrote a frame to the file? This is used to check wheter we need
+    /// Did we wrote a frame to the file? This is used to check whether we need
     /// to write a final `END` record in the destructor
     bool written_ = false;
     /// Store secondary structure information. Keys are the
@@ -98,7 +98,7 @@ private:
     optional<std::pair<FullResidueId, std::string>> current_secinfo_;
 };
 
-template<> FormatInfo format_information<PDBFormat>();
+template<> const FormatMetadata& format_metadata<PDBFormat>();
 
 } // namespace chemfiles
 

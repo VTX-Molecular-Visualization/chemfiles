@@ -9,14 +9,6 @@
 #include <vector>
 #include <exception>
 
-#include "chemfiles/File.hpp"
-#include "chemfiles/Format.hpp"
-#include "chemfiles/Atom.hpp"
-#include "chemfiles/Frame.hpp"
-#include "chemfiles/Property.hpp"
-#include "chemfiles/Topology.hpp"
-#include "chemfiles/Connectivity.hpp"
-
 #include "chemfiles/types.hpp"
 #include "chemfiles/utils.hpp"
 #include "chemfiles/parse.hpp"
@@ -25,14 +17,36 @@
 #include "chemfiles/string_view.hpp"
 #include "chemfiles/external/optional.hpp"
 
+#include "chemfiles/File.hpp"
+#include "chemfiles/Atom.hpp"
+#include "chemfiles/Frame.hpp"
+#include "chemfiles/Property.hpp"
+#include "chemfiles/Topology.hpp"
+#include "chemfiles/Connectivity.hpp"
+#include "chemfiles/FormatMetadata.hpp"
+
 #include "chemfiles/formats/SDF.hpp"
 
 using namespace chemfiles;
 
-template<> FormatInfo chemfiles::format_information<SDFFormat>() {
-    return FormatInfo("SDF").with_extension(".sdf").description(
-        "Structural Data File format"
-    );
+template<> const FormatMetadata& chemfiles::format_metadata<SDFFormat>() {
+    static FormatMetadata metadata;
+    metadata.name = "SDF";
+    metadata.extension = ".sdf";
+    metadata.description = "Structural Data File format";
+    metadata.reference = "https://discover.3ds.com/ctfile-documentation-request-form";
+
+    metadata.read = true;
+    metadata.write = true;
+    metadata.memory = true;
+
+    metadata.positions = true;
+    metadata.velocities = false;
+    metadata.unit_cell = false;
+    metadata.atoms = true;
+    metadata.bonds = true;
+    metadata.residues = false;
+    return metadata;
 }
 
 void SDFFormat::read_next(Frame& frame) {
@@ -74,13 +88,13 @@ void SDFFormat::read_next(Frame& frame) {
         auto atom = Atom(trim(name).to_string());
 
         if (line.length() >= 40) {
-            long long chrg = 0;
+            long long charge_code = 0;
             try {
-                chrg = parse<long long>(line.substr(36, 3));
+                charge_code = parse<long long>(line.substr(36, 3));
             } catch (const Error&) {
                 warning("SDF reader", "charge code not numeric: {}", line.substr(36, 3));
             }
-            switch(chrg) {
+            switch(charge_code) {
             case 0:
                 break; // do nothing
             case 1:
@@ -102,7 +116,7 @@ void SDFFormat::read_next(Frame& frame) {
                 atom.set_charge(-3.0);
                 break;
             default:
-                warning("SDF reader", "unknown charge code: '{}'", chrg);
+                warning("SDF reader", "unknown charge code: '{}'", charge_code);
             }
         }
 
@@ -119,11 +133,11 @@ void SDFFormat::read_next(Frame& frame) {
 
         auto atom1 = parse<size_t>(line.substr(0, 3));
         auto atom2 = parse<size_t>(line.substr(3, 3));
-        auto bondo = parse<size_t>(line.substr(6, 3));
+        auto order = parse<size_t>(line.substr(6, 3));
 
         Bond::BondOrder bo;
 
-        switch (bondo) {
+        switch (order) {
             case 1:
                 bo = Bond::SINGLE;
                 break;
@@ -136,7 +150,7 @@ void SDFFormat::read_next(Frame& frame) {
             case 4:
                 bo = Bond::AROMATIC;
                 break;
-            case 8: // The 8 ispecifically means unspecified
+            case 8: // The 8 specifically means unspecified
             default:
                 bo = Bond::UNKNOWN;
                 break;
@@ -154,14 +168,14 @@ void SDFFormat::read_next(Frame& frame) {
             if (line.empty()) {
                 continue;
             } else if (line.substr(0, 4) == "$$$$") {
-                // Ending block, technically wrong - but we can exit safetly
+                // Ending block, technically wrong - but we can exit safely
                 return;
             } else if (line.substr(0, 6) == "M  END") {
                 // Proper end of block
                 break;
             } // TODO: Add actual ATOM property parsing here.....
         } catch (const FileError&) {
-            // Premature end of file, but we can safetly end here
+            // Premature end of file, but we can safely end here
             warning("SDF reader", "premature end of file while reading atom property");
             return;
         }
@@ -249,7 +263,7 @@ void SDFFormat::write_next(const Frame& frame) {
                 charge_code = 7;
                 break;
             default:
-                warning("SDF writer", "charge code not availible for '{}'", int_part);
+                warning("SDF writer", "charge code not available for '{}'", int_part);
             }
         } else {
             warning("SDF writer", "charge not an integer: '{}'", topology[i].charge());

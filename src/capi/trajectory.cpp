@@ -2,12 +2,15 @@
 // Copyright (C) Guillaume Fraux and contributors -- BSD license
 
 #include <cstdint>
+#include <cstring>
 #include <string>
 
 #include "chemfiles/capi/types.h"
-#include "chemfiles/capi/trajectory.h"
+#include "chemfiles/capi/misc.h"
 #include "chemfiles/capi/utils.hpp"
 #include "chemfiles/capi/shared_allocator.hpp"
+
+#include "chemfiles/capi/trajectory.h"
 
 #include "chemfiles/Error.hpp"
 #include "chemfiles/Frame.hpp"
@@ -139,17 +142,17 @@ extern "C" chfl_status chfl_trajectory_nsteps(CHFL_TRAJECTORY* const trajectory,
     )
 }
 
-extern "C" chfl_status chfl_trajectory_memory_buffer(const CHFL_TRAJECTORY* trajectory, const char** data, uint64_t* max_size) {
+extern "C" chfl_status chfl_trajectory_memory_buffer(const CHFL_TRAJECTORY* trajectory, const char** data, uint64_t* size) {
     CHECK_POINTER(trajectory);
     CHECK_POINTER(data);
-    CHECK_POINTER(max_size);
+    CHECK_POINTER(size);
     CHFL_ERROR_CATCH(
         auto block = trajectory->memory_buffer();
         if (!block) {
-            throw Error("trajectory not opened to write to a memory block");
+            throw Error("this trajectory was not opened to write to a memory buffer");
         }
         *data = block.value().data();
-        *max_size = trajectory->memory_buffer().value().size();
+        *size = trajectory->memory_buffer().value().size();
     )
 }
 

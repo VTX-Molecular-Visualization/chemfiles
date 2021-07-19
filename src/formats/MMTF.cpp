@@ -8,6 +8,7 @@
 #include <vector>
 #include <memory>
 #include <exception>
+#include <unordered_set>
 
 #include <mmtf/errors.hpp>
 #include <mmtf/structure_data.hpp>
@@ -15,21 +16,22 @@
 #include <mmtf/encoder.hpp>
 #include <mmtf/export_helpers.hpp>
 
-#include "chemfiles/File.hpp"
-#include "chemfiles/Format.hpp"
-#include "chemfiles/Atom.hpp"
-#include "chemfiles/Frame.hpp"
-#include "chemfiles/Property.hpp"
-#include "chemfiles/Residue.hpp"
-#include "chemfiles/Topology.hpp"
-#include "chemfiles/Connectivity.hpp"
-
 #include "chemfiles/types.hpp"
 #include "chemfiles/warnings.hpp"
 #include "chemfiles/error_fmt.hpp"
 #include "chemfiles/unreachable.hpp"
 #include "chemfiles/external/span.hpp"
 #include "chemfiles/external/optional.hpp"
+
+#include "chemfiles/File.hpp"
+#include "chemfiles/Atom.hpp"
+#include "chemfiles/Frame.hpp"
+#include "chemfiles/Residue.hpp"
+#include "chemfiles/UnitCell.hpp"
+#include "chemfiles/Topology.hpp"
+#include "chemfiles/Property.hpp"
+#include "chemfiles/Connectivity.hpp"
+#include "chemfiles/FormatMetadata.hpp"
 
 #include "chemfiles/files/MemoryBuffer.hpp"
 
@@ -41,10 +43,24 @@ static int8_t bond_order_to_mmtf(Bond::BondOrder order);
 static Bond::BondOrder bond_order_to_chemfiles(int32_t order);
 static void set_secondary(Residue& residue, int32_t code);
 
-template<> FormatInfo chemfiles::format_information<MMTFFormat>() {
-    return FormatInfo("MMTF").with_extension(".mmtf").description(
-        "MMTF (RCSB Protein Data Bank) binary format"
-    );
+template<> const FormatMetadata& chemfiles::format_metadata<MMTFFormat>() {
+    static FormatMetadata metadata;
+    metadata.name = "MMTF";
+    metadata.extension = ".mmtf";
+    metadata.description = "MMTF (RCSB Protein Data Bank) binary format";
+    metadata.reference = "https://mmtf.rcsb.org/";
+
+    metadata.read = true;
+    metadata.write = true;
+    metadata.memory = true;
+
+    metadata.positions = true;
+    metadata.velocities = false;
+    metadata.unit_cell = true;
+    metadata.atoms = true;
+    metadata.bonds = true;
+    metadata.residues = true;
+    return metadata;
 }
 
 MMTFFormat::MMTFFormat(std::string path, File::Mode mode, File::Compression compression) {
@@ -52,6 +68,21 @@ MMTFFormat::MMTFFormat(std::string path, File::Mode mode, File::Compression comp
         auto file = TextFile(std::move(path), mode, compression);
         auto buffer = file.readall();
         decode(buffer.data(), buffer.size(), file.path());
+        if (!mmtf::isDefaultValue(structure_.atomIdList)) {
+            // If ids are not ordered or are missing consecutive values the atoms
+            // have to be re-ordered.
+            bool isValidIdOrder = false;
+            if (structure_.atomIdList[0] == 1) {
+                // hack `is_sorted` to check that all ids are consecutive and sorted
+                isValidIdOrder = std::is_sorted(
+                    new_atom_indexes_.begin(), new_atom_indexes_.end(),
+                    [](const int32_t& lhs, const int32_t& rhs) { return (lhs + 1) == rhs; });
+            }
+            if (!isValidIdOrder) {
+                new_atom_indexes_ = structure_.atomIdList;
+                std::sort(new_atom_indexes_.begin(), new_atom_indexes_.end());
+            }
+        }
     } else if (mode == File::WRITE) {
         filename_ = std::move(path); // We really don't need to do anything, yet
     } else if (mode == File::APPEND) {
@@ -108,19 +139,17 @@ void MMTFFormat::read_step(const size_t step, Frame& frame) {
     // Fast-forward, keeping all indexes updated
     while(modelIndex_ != step) {
         auto chainsPerModel = static_cast<size_t>(structure_.chainsPerModel[modelIndex_]);
-        while(chainIndex_ != chainsPerModel) {
+        for (size_t j = 0; j < chainsPerModel; ++j) {
             auto groupsPerChain = static_cast<size_t>(structure_.groupsPerChain[chainIndex_]);
-            while(groupIndex_ != groupsPerChain) {
+            for (size_t k = 0; k < groupsPerChain; ++k) {
                 auto groupType = static_cast<size_t>(structure_.groupTypeList[groupIndex_]);
-                auto group = structure_.groupList[groupType];
+                const auto& group = structure_.groupList[groupType];
                 auto atomCount = group.atomNameList.size();
                 atomIndex_ += atomCount;
                 groupIndex_++;
             }
-            groupIndex_ = 0;
             chainIndex_++;
         }
-        chainIndex_ = 0;
         modelIndex_++;
     }
 
@@ -144,15 +173,11 @@ void MMTFFormat::read_step(const size_t step, Frame& frame) {
 }
 
 void MMTFFormat::read(Frame& frame) {
+    const auto& cell = structure_.unitCell;
     if (structure_.unitCell.size() == 6) {
-        frame.set_cell({
-            static_cast<double>(structure_.unitCell[0]),
-            static_cast<double>(structure_.unitCell[1]),
-            static_cast<double>(structure_.unitCell[2]),
-            static_cast<double>(structure_.unitCell[3]),
-            static_cast<double>(structure_.unitCell[4]),
-            static_cast<double>(structure_.unitCell[5])
-        });
+        Vector3D lengths = {static_cast<double>(cell[0]), static_cast<double>(cell[1]), static_cast<double>(cell[2])};
+        Vector3D angles = {static_cast<double>(cell[3]), static_cast<double>(cell[4]), static_cast<double>(cell[5])};
+        frame.set_cell({lengths, angles});
     }
 
     if (!mmtf::isDefaultValue(structure_.title)) {
@@ -220,8 +245,8 @@ void MMTFFormat::read_model(Frame& frame) {
 }
 
 std::string MMTFFormat::find_assembly() {
-    // Unfortunetly we must loop through the assembly lists to find which
-    // one our current chain belongs to. Forunetly, these lists are fairly
+    // Unfortunately we must loop through the assembly lists to find which
+    // one our current chain belongs to. Fortunately, these lists are fairly
     // short in the vast majority of cases.
 
     for (const auto& assembly : structure_.bioAssemblyList) {
@@ -370,9 +395,9 @@ void MMTFFormat::apply_symmetry(Frame& frame) {
 
             std::vector<Residue> residues_to_add;
             for (const auto& residue : frame.topology().residues()) {
-                auto asmbl = residue.get("assembly");
+                auto assembly_s = residue.get("assembly");
 
-                if (!asmbl || asmbl->as_string() != "bio" + assembly.name) {
+                if (!assembly_s || assembly_s->as_string() != "bio" + assembly.name) {
                     continue;
                 }
 
@@ -445,13 +470,15 @@ void MMTFFormat::write(const Frame& frame) {
 
     if (mmtf::isDefaultValue(structure_.unitCell)) {
         auto& cell = frame.cell();
+        auto lengths = cell.lengths();
+        auto angles = cell.angles();
         structure_.unitCell.resize(6);
-        structure_.unitCell[0] = static_cast<float>(cell.a());
-        structure_.unitCell[1] = static_cast<float>(cell.b());
-        structure_.unitCell[2] = static_cast<float>(cell.c());
-        structure_.unitCell[3] = static_cast<float>(cell.alpha());
-        structure_.unitCell[4] = static_cast<float>(cell.beta());
-        structure_.unitCell[5] = static_cast<float>(cell.gamma());
+        structure_.unitCell[0] = static_cast<float>(lengths[0]);
+        structure_.unitCell[1] = static_cast<float>(lengths[1]);
+        structure_.unitCell[2] = static_cast<float>(lengths[2]);
+        structure_.unitCell[3] = static_cast<float>(angles[0]);
+        structure_.unitCell[4] = static_cast<float>(angles[1]);
+        structure_.unitCell[5] = static_cast<float>(angles[2]);
 
         unitcellForWrite_ = cell;
     } else if (unitcellForWrite_ != frame.cell()) {
@@ -600,7 +627,20 @@ size_t MMTFFormat::atom_id(size_t mmtf_id) {
     if (!mmtf::isDefaultValue(structure_.atomIdList)) {
         assert(mmtf_id < structure_.atomIdList.size());
         assert(structure_.atomIdList[mmtf_id] > 0);
-        auto id = static_cast<size_t>(structure_.atomIdList[mmtf_id]) - 1;
+        size_t id;
+        if (new_atom_indexes_.empty()) {
+            // atom ids are well-behaved, no reordering necessary
+            id = static_cast<size_t>(structure_.atomIdList[mmtf_id]) - 1;
+        } else {
+            assert(structure_.atomIdList.size() == new_atom_indexes_.size());
+            auto listedId = structure_.atomIdList[mmtf_id];
+            // use the fact that indexes are sorted for faster search
+            auto it =
+                std::lower_bound(new_atom_indexes_.begin(), new_atom_indexes_.end(), listedId);
+            // it is guaranteed that the lower bound is an exact match
+            assert(it != new_atom_indexes_.end() && *it == listedId);
+            id = static_cast<size_t>(std::distance(new_atom_indexes_.begin(), it));
+        }
         assert(atomSkip_ <= id);
         return id - atomSkip_;
     } else {
@@ -621,7 +661,7 @@ int8_t bond_order_to_mmtf(Bond::BondOrder order) {
         return 4;
     case Bond::BondOrder::UNKNOWN:
         return -1;
-    case Bond::BondOrder::QINTUPLET:
+    case Bond::BondOrder::QUINTUPLET:
     case Bond::BondOrder::AMIDE:
     case Bond::BondOrder::AROMATIC:
     case Bond::BondOrder::UP:

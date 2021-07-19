@@ -6,9 +6,9 @@
 
 #include <cstdint>
 #include <string>
-#include <vector>
 
 #include "chemfiles/File.hpp"
+#include "chemfiles/files/MemoryBuffer.hpp"
 
 typedef struct gzFile_s *gzFile;
 
@@ -29,14 +29,14 @@ public:
 
 private:
     /// Check if any error happened while reading/writing the file. Returns the
-    /// corresponding error message or `nullptr` if no error occured.
+    /// corresponding error message or `nullptr` if no error occurred.
     const char* check_error() const;
 
     gzFile file_ = nullptr;
 };
 
 /// Inflates GZipped data from the `src` buffer
-std::vector<char> gzinflate_in_place(const char* src, size_t size);
+MemoryBuffer decompress_gz(const char* src, size_t size);
 
 } // namespace chemfiles
 

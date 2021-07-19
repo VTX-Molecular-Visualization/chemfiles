@@ -5,13 +5,16 @@
 #define CHEMFILES_MISC_HPP
 
 #include <string>
+#include <vector>
 #include <functional>
+
 #include "chemfiles/exports.h"
 
 // A few exported function that can not be in the same header as the main
 // functionality; because the rest of the functionality is not exported.
 // The implementation is to be found with the associated functionality.
 namespace chemfiles {
+class FormatMetadata;
 
 /// Callback type used to process a warning event
 typedef std::function<void(const std::string& message)> warning_callback_t; // NOLINT: doxygen fails to generate the right XLM from this
@@ -32,7 +35,7 @@ void CHFL_EXPORT set_warning_callback(warning_callback_t callback);
 /// file.
 ///
 /// This function will throw a `ConfigurationError` if there is no file at
-/// `path`, or if the file is incorectly formatted. Data from the new
+/// `path`, or if the file is incorrectly formatted. Data from the new
 /// configuration file will overwrite any existing data.
 ///
 /// @example{add_configuration.cpp}
@@ -42,6 +45,11 @@ void CHFL_EXPORT set_warning_callback(warning_callback_t callback);
 /// @throws ConfigurationError if the file at `path` can not be read, or if it
 ///                            is invalid.
 void CHFL_EXPORT add_configuration(const std::string& path);
+
+/// Get the list of formats chemfiles knows about, and all associated metadata
+///
+/// @example{formats_list.cpp}
+std::vector<std::reference_wrapper<const FormatMetadata>> CHFL_EXPORT formats_list();
 
 } // namespace chemfiles
 

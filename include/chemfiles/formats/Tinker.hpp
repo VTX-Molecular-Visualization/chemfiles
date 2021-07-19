@@ -15,6 +15,7 @@
 namespace chemfiles {
 class Frame;
 class MemoryBuffer;
+class FormatMetadata;
 
 /// Tinker XYZ file format.
 ///
@@ -36,7 +37,7 @@ public:
     optional<uint64_t> forward() override;
 };
 
-template<> FormatInfo format_information<TinkerFormat>();
+template<> const FormatMetadata& format_metadata<TinkerFormat>();
 
 } // namespace chemfiles
 

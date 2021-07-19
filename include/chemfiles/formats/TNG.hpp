@@ -10,14 +10,14 @@
 
 #include "chemfiles/File.hpp"
 #include "chemfiles/Format.hpp"
+
 #include "chemfiles/files/TNGFile.hpp"
 
 namespace chemfiles {
 class Frame;
+class FormatMetadata;
 
-/// [TNG][TNG] file format reader.
-///
-/// [TNG]: http://dx.doi.org/10.1007/s00894-010-0948-5
+/// TNG file format reader.
 class TNGFormat final: public Format {
 public:
     TNGFormat(std::string path, File::Mode mode, File::Compression compression);
@@ -33,21 +33,21 @@ private:
 
     /// Associated TNG file
     TNGFile tng_;
-    /// Scale factor for all lenght dependent data:
+    /// Scale factor for all length-dependent data:
     /// positions, velocities, forces, and box shape.
     double distance_scale_factor_ = -1;
-    /// The next step to read -- in chemfiles numerotation
-    /// Chemfiles frames are numbered sucessivelly: 0, 1, 2, 3; without
+    /// The next step to read -- in chemfiles numbering
+    /// Chemfiles frames are numbered successively: 0, 1, 2, 3; without
     /// accounting for the underlying simulation step
     size_t step_ = 0;
-    /// The list of steps in the file -- in TNG numerotation
+    /// The list of steps in the file -- in TNG numbering
     /// TNG frames are numbered by the MD step: 0, 10, 20, 30
     std::vector<int64_t> tng_steps_;
     /// The number of atoms in the current frame
     int64_t natoms_ = 0;
 };
 
-template<> FormatInfo format_information<TNGFormat>();
+template<> const FormatMetadata& format_metadata<TNGFormat>();
 
 } // namespace chemfiles
 

@@ -5,9 +5,11 @@
 #include <algorithm>
 
 #include "chemfiles/capi/types.h"
-#include "chemfiles/capi/cell.h"
+#include "chemfiles/capi/misc.h"
 #include "chemfiles/capi/utils.hpp"
 #include "chemfiles/capi/shared_allocator.hpp"
+
+#include "chemfiles/capi/cell.h"
 
 #include "chemfiles/types.hpp"
 #include "chemfiles/UnitCell.hpp"
@@ -16,11 +18,16 @@ using namespace chemfiles;
 
 static_assert(sizeof(chfl_cellshape) == sizeof(int), "Wrong size for chfl_cellshape enum");
 
-extern "C" CHFL_CELL* chfl_cell(const chfl_vector3d lengths) {
+extern "C" CHFL_CELL* chfl_cell(const chfl_vector3d lengths, const chfl_vector3d angles) {
     CHFL_CELL* cell = nullptr;
-    CHECK_POINTER_GOTO(lengths);
     CHFL_ERROR_GOTO(
-        cell = shared_allocator::make_shared<UnitCell>(lengths[0], lengths[1], lengths[2]);
+        if (lengths == nullptr) {
+            cell = shared_allocator::make_shared<UnitCell>();
+        } else if (angles == nullptr) {
+            cell = shared_allocator::make_shared<UnitCell>(vector3d(lengths));
+        } else {
+            cell = shared_allocator::make_shared<UnitCell>(vector3d(lengths), vector3d(angles));
+        }
     )
     return cell;
 error:
@@ -28,18 +35,13 @@ error:
     return nullptr;
 }
 
-extern "C" CHFL_CELL* chfl_cell_triclinic(const chfl_vector3d lengths, const chfl_vector3d angles) {
+extern "C" CHFL_CELL* chfl_cell_from_matrix(const chfl_vector3d matrix[3]) {
     CHFL_CELL* cell = nullptr;
-    CHECK_POINTER_GOTO(lengths);
-    CHECK_POINTER_GOTO(angles);
+    CHECK_POINTER_GOTO(matrix);
     CHFL_ERROR_GOTO(
-        cell = shared_allocator::make_shared<UnitCell>(
-            lengths[0], lengths[1], lengths[2],
-            angles[0], angles[1], angles[2]
-        );
-        // ensure that the unit cell shape is always TRICLINIC, even if the
-        // three angles are 90°.
-        cell->set_shape(UnitCell::TRICLINIC);
+        auto cpp_matrix = Matrix3D::zero();
+        std::copy(&matrix[0][0], &matrix[0][0] + 9, &cpp_matrix[0][0]);
+        cell = shared_allocator::make_shared<UnitCell>(cpp_matrix);
     )
     return cell;
 error:
@@ -83,9 +85,8 @@ extern "C" chfl_status chfl_cell_lengths(const CHFL_CELL* const cell, chfl_vecto
     CHECK_POINTER(cell);
     CHECK_POINTER(lengths);
     CHFL_ERROR_CATCH(
-        lengths[0] = cell->a();
-        lengths[1] = cell->b();
-        lengths[2] = cell->c();
+        auto cell_lengths = cell->lengths();
+        std::copy(&cell_lengths[0], &cell_lengths[0] + 3, lengths);
     )
 }
 
@@ -93,9 +94,7 @@ extern "C" chfl_status chfl_cell_set_lengths(CHFL_CELL* const cell, const chfl_v
     CHECK_POINTER(cell);
     CHECK_POINTER(lengths);
     CHFL_ERROR_CATCH(
-        cell->set_a(lengths[0]);
-        cell->set_b(lengths[1]);
-        cell->set_c(lengths[2]);
+        cell->set_lengths(vector3d(lengths));
     )
 }
 
@@ -103,18 +102,15 @@ extern "C" chfl_status chfl_cell_angles(const CHFL_CELL* const cell, chfl_vector
     CHECK_POINTER(cell);
     CHECK_POINTER(angles);
     CHFL_ERROR_CATCH(
-        angles[0] = cell->alpha();
-        angles[1] = cell->beta();
-        angles[2] = cell->gamma();
+        auto cell_angles = cell->angles();
+        std::copy(&cell_angles[0], &cell_angles[0] + 3, angles);
     )
 }
 
 extern "C" chfl_status chfl_cell_set_angles(CHFL_CELL* const cell, const chfl_vector3d angles) {
     CHECK_POINTER(cell);
     CHFL_ERROR_CATCH(
-        cell->set_alpha(angles[0]);
-        cell->set_beta(angles[1]);
-        cell->set_gamma(angles[2]);
+        cell->set_angles(vector3d(angles));
     )
 }
 

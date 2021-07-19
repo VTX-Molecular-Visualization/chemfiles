@@ -2,10 +2,9 @@
 #define CHFL_SHARED_ALLOCATOR_HPP
 
 #include <vector>
-#include <memory>
 #include <functional>
-#include <algorithm>  // IWYU pragma: keep
 #include <unordered_map>
+#include <type_traits>
 
 #include "chemfiles/error_fmt.hpp"
 #include "chemfiles/mutex.hpp"
@@ -29,7 +28,7 @@ namespace {
 /// An allocator with shared_ptr like semantics, working with raw pointers.
 ///
 /// This is used in the C API to ensure that when taking pointers to
-/// atoms/residues/cell inside a frame/topology, the frame/topology is keept
+/// atoms/residues/cell inside a frame/topology, the frame/topology is kept
 /// alive even if the user calls chfl_free.
 class shared_allocator {
 public:
@@ -39,9 +38,9 @@ public:
     shared_allocator(shared_allocator&&) = default;
     shared_allocator& operator=(shared_allocator&&) = default;
 
-    /// Like std::make_shared: create a new shared pointer by constructing a
+    /// Like `std::make_shared`: create a new shared pointer by constructing a
     /// value of type T with the given arguments.
-    template<class T, typename ... Args>
+    template<class T, typename ... Args, typename std::enable_if<!std::is_array<T>::value>::type* = nullptr>
     static T* make_shared(Args&& ... args) {
         auto instance = instance_.lock();
         auto ptr = new T{std::forward<Args>(args)...};
@@ -49,9 +48,19 @@ public:
         return ptr;
     }
 
-    /// Like std::shared_ptr<U> aliasing contructor: element and ptr will share
-    /// the references count, and none will be freed while the other one is
-    /// alive.
+    /// Like `std::make_shared`: create a new shared pointer to an array type.
+    /// This function returns a pointer to the first element of the array.
+    template<class T, typename std::enable_if<std::is_array<T>::value>::type* = nullptr>
+    static typename std::remove_extent<T>::type* make_shared(size_t count) {
+        auto instance = instance_.lock();
+        auto ptr = new typename std::remove_extent<T>::type[count];
+        instance->insert_new_array(ptr);
+        return ptr;
+    }
+
+    /// Like `std::shared_ptr<U>` aliasing contructor: element and ptr will
+    /// share the references count, and none will be freed while the other one
+    /// is alive.
     ///
     /// `ptr` must have been allocated with make_shared.
     template<class T, class U>
@@ -63,7 +72,7 @@ public:
     template<class T, class U>
     static const T* shared_ptr(U* ptr, const T* element) {
         // const_cast is OK here, since we return a const T* anyway, and only
-        // use the adress of the pointer to create a new shared_ptr
+        // use the address of the pointer to create a new shared_ptr
         return shared_ptr(ptr, const_cast<T*>(element));
     }
 
@@ -87,6 +96,19 @@ private:
         }
         size_t id = get_unused_metadata();
         metadata_[id] = shared_metadata{1, [ptr](){ delete ptr; }};
+        pointers_.emplace(ptr, id);
+    }
+
+    template<class T>
+    void insert_new_array(T* ptr) {
+        if (pointers_.count(ptr) != 0) {
+            throw chemfiles::memory_error(
+                "internal error: pointer at {} is already managed by "
+                "shared_allocator", static_cast<void*>(ptr)
+            );
+        }
+        size_t id = get_unused_metadata();
+        metadata_[id] = shared_metadata{1, [ptr](){ delete[] ptr; }};
         pointers_.emplace(ptr, id);
     }
 
@@ -160,7 +182,7 @@ private:
             return metadata_.at(it->second);
         } else {
             throw chemfiles::memory_error(
-                "internal error: unknwon pointer passed to shared_allocator::metadata"
+                "internal error: unknown pointer passed to shared_allocator::metadata"
             );
         }
     }
@@ -178,7 +200,7 @@ private:
         }
     }
 
-    /// A map of pointer adresses -> indexes of metadata in metadata_
+    /// A map of pointer addresses -> indexes of metadata in metadata_
     std::unordered_multimap<const void*, size_t> pointers_;
     /// Metadata for all known pointers
     std::vector<shared_metadata> metadata_;

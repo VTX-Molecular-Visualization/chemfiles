@@ -14,6 +14,7 @@
 
 #include "chemfiles/File.hpp"
 #include "chemfiles/Format.hpp"
+
 #include "chemfiles/Topology.hpp"  // IWYU pragma: keep
 #include "chemfiles/sorted_set.hpp"
 #include "chemfiles/string_view.hpp"
@@ -23,6 +24,7 @@ namespace chemfiles {
 class Atom;
 class Frame;
 class MemoryBuffer;
+class FormatMetadata;
 
 struct atom_data final {
     double x = 0;
@@ -117,7 +119,7 @@ private:
     sorted_set<improper_type> impropers_;
 };
 
-/// [LAMMPS Data] file format reader and writer.
+/// LAMMPS Data file format reader and writer.
 ///
 /// LAMMPS data files are not fully stand-alone, as one needs to know the atom
 /// style to read the data. This reader will try to guess the atom style by
@@ -125,14 +127,12 @@ private:
 /// reading any comment after the `Atoms` section name. If no atom style is
 /// specified, the code default to `full` and send a warning.
 ///
-/// The code alse tries to read atomic names at the end of data lines. For
+/// The code also tries to read atomic names at the end of data lines. For
 /// example, the atom at index 44 will have `C2` as atomic name.
 ///
 /// ```
 /// 44 44 2 0.000000 1.094000 2.061000 69.552002 # C2 RES
 /// ```
-///
-/// [LAMMPS Data]: http://lammps.sandia.gov/doc/read_data.html
 class LAMMPSDataFormat final: public TextFormat {
 public:
     LAMMPSDataFormat(std::string path, File::Mode mode, File::Compression compression):
@@ -225,7 +225,7 @@ private:
     std::vector<std::string> names_;
 };
 
-template<> FormatInfo format_information<LAMMPSDataFormat>();
+template<> const FormatMetadata& format_metadata<LAMMPSDataFormat>();
 
 } // namespace chemfiles
 

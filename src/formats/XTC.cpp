@@ -1,34 +1,48 @@
 // Chemfiles, a modern library for chemistry file reading and writing
 // Copyright (C) Guillaume Fraux and contributors -- BSD license
 
-#include <cmath>
 #include <cstdio>
 #include <cassert>
 #include <array>
 #include <string>
 #include <vector>
-#include <algorithm>
 
 #include <xdrfile.h>
 #include <xdrfile_xtc.h>
-
-#include "chemfiles/File.hpp"
-#include "chemfiles/Format.hpp"
-#include "chemfiles/Frame.hpp"
-#include "chemfiles/UnitCell.hpp"
 
 #include "chemfiles/types.hpp"
 #include "chemfiles/error_fmt.hpp"
 #include "chemfiles/external/span.hpp"
 #include "chemfiles/external/optional.hpp"
 
+#include "chemfiles/File.hpp"
+#include "chemfiles/Frame.hpp"
+#include "chemfiles/UnitCell.hpp"
+#include "chemfiles/FormatMetadata.hpp"
+
 #include "chemfiles/formats/XTC.hpp"
 #include "chemfiles/files/XDRFile.hpp"
 
 using namespace chemfiles;
 
-template <> FormatInfo chemfiles::format_information<XTCFormat>() {
-    return FormatInfo("XTC").with_extension(".xtc").description("XTC binary format");
+template<> const FormatMetadata& chemfiles::format_metadata<XTCFormat>() {
+    static FormatMetadata metadata;
+    metadata.name = "XTC";
+    metadata.extension = ".xtc";
+    metadata.description = "GROMACS XTC binary format";
+    metadata.reference = "http://manual.gromacs.org/current/reference-manual/file-formats.html#xtc";
+
+    metadata.read = true;
+    metadata.write = true;
+    metadata.memory = false;
+
+    metadata.positions = true;
+    metadata.velocities = false;
+    metadata.unit_cell = true;
+    metadata.atoms = false;
+    metadata.bonds = false;
+    metadata.residues = false;
+    return metadata;
 }
 
 #define STRING_0(x) #x
@@ -37,7 +51,6 @@ template <> FormatInfo chemfiles::format_information<XTCFormat>() {
 
 static void set_positions(const std::vector<float>& x, Frame& frame);
 static void get_positions(std::vector<float>& x, const Frame& frame);
-static void set_cell(matrix box, Frame& frame);
 static void get_cell(matrix box, const Frame& frame);
 
 XTCFormat::XTCFormat(std::string path, File::Mode mode, File::Compression compression)
@@ -72,7 +85,14 @@ void XTCFormat::read(Frame& frame) {
     frame.resize(static_cast<size_t>(natoms));
 
     set_positions(x, frame);
-    set_cell(box, frame);
+
+    auto matrix = Matrix3D(
+        static_cast<double>(box[0][0]), static_cast<double>(box[1][0]), static_cast<double>(box[2][0]),
+        static_cast<double>(box[0][1]), static_cast<double>(box[1][1]), static_cast<double>(box[2][1]),
+        static_cast<double>(box[0][2]), static_cast<double>(box[1][2]), static_cast<double>(box[2][2])
+    );
+    // Factor 10 because the cell lengths are in nm in the XTC format
+    frame.set_cell(UnitCell(10 * matrix));
 
     step_++;
 }
@@ -107,7 +127,7 @@ void set_positions(const std::vector<float>& x, Frame& frame) {
     auto positions = frame.positions();
     assert(x.size() == 3 * positions.size());
     for (size_t i = 0; i < frame.size(); i++) {
-        // Factor 10 because the cell lengthes are in nm in the XTC format
+        // Factor 10 because the cell lengths are in nm in the XTC format
         positions[i][0] = static_cast<double>(x[i * 3]) * 10;
         positions[i][1] = static_cast<double>(x[i * 3 + 1]) * 10;
         positions[i][2] = static_cast<double>(x[i * 3 + 2]) * 10;
@@ -118,38 +138,15 @@ void get_positions(std::vector<float>& x, const Frame& frame) {
     auto positions = frame.positions();
     assert(x.size() == 3 * positions.size());
     for (size_t i = 0; i < frame.size(); i++) {
-        // Factor 10 because the cell lengthes are in nm in the XTC format
+        // Factor 10 because the cell lengths are in nm in the XTC format
         x[i * 3] = static_cast<float>(positions[i][0] / 10.0);
         x[i * 3 + 1] = static_cast<float>(positions[i][1] / 10.0);
         x[i * 3 + 2] = static_cast<float>(positions[i][2] / 10.0);
     }
 }
 
-void set_cell(matrix box, Frame& frame) {
-    auto a = Vector3D(static_cast<double>(box[0][0]), static_cast<double>(box[0][1]),
-                      static_cast<double>(box[0][2]));
-    auto b = Vector3D(static_cast<double>(box[1][0]), static_cast<double>(box[1][1]),
-                      static_cast<double>(box[1][2]));
-    auto c = Vector3D(static_cast<double>(box[2][0]), static_cast<double>(box[2][1]),
-                      static_cast<double>(box[2][2]));
-
-    auto angle = [](const Vector3D& u, const Vector3D& v) {
-        constexpr double PI = 3.141592653589793238463;
-        auto cos = dot(u, v) / (u.norm() * v.norm());
-        cos = std::max(-1., std::min(1., cos));
-        return acos(cos) * 180.0 / PI;
-    };
-
-    double alpha = angle(b, c);
-    double beta = angle(a, c);
-    double gamma = angle(a, b);
-
-    // Factor 10 because the cell lengthes are in nm in the XTC format
-    frame.set_cell({a.norm() * 10, b.norm() * 10, c.norm() * 10, alpha, beta, gamma});
-}
-
 void get_cell(matrix box, const Frame& frame) {
-    // Factor 10 because the cell lengthes are in nm in the XTC format
+    // Factor 10 because the cell lengths are in nm in the XTC format
     auto matrix = frame.cell().matrix() / 10.0;
     box[0][0] = static_cast<float>(matrix[0][0]);
     box[0][1] = static_cast<float>(matrix[1][0]);

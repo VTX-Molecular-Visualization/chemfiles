@@ -90,7 +90,7 @@ TEST_CASE("Frame step") {
 TEST_CASE("Unit cell") {
     auto frame = Frame();
     CHECK(frame.cell().shape() == UnitCell::INFINITE);
-    frame.set_cell(UnitCell(10));
+    frame.set_cell(UnitCell({10, 10, 10}));
     CHECK(frame.cell().shape() == UnitCell::ORTHORHOMBIC);
 }
 
@@ -138,7 +138,7 @@ TEST_CASE("Guess topology") {
         CHECK(topology.bonds() == (std::vector<Bond>{{0, 1}, {0, 2}, {0, 3}}));
     }
 
-    SECTION("Cleanup supplementaty H-H bonds") {
+    SECTION("Cleanup supplementary H-H bonds") {
         auto frame = Frame();
         frame.add_atom(Atom("O"), {0, 0, 0});
         frame.add_atom(Atom("H"), {0.2, 0.8, 0});
@@ -189,7 +189,7 @@ TEST_CASE("Guess topology") {
 TEST_CASE("PBC functions") {
     SECTION("Distance") {
         auto frame = Frame();
-        frame.set_cell(UnitCell(3.0, 4.0, 5.0));
+        frame.set_cell(UnitCell({3.0, 4.0, 5.0}));
         frame.add_atom(Atom(), Vector3D(0, 0, 0));
         frame.add_atom(Atom(), Vector3D(1, 2, 6));
 
@@ -258,19 +258,17 @@ TEST_CASE("Properties") {
     // Iterate over all properties
     frame.set("buzz", 22);
     frame.set("fizz", Vector3D(1, 2, 3));
+    auto expected = std::vector<std::tuple<std::string, Property>>{
+        std::tuple<std::string, Property>{"bar", false},
+        std::tuple<std::string, Property>{"buzz", 22},
+        std::tuple<std::string, Property>{"fizz", Vector3D(1, 2, 3)},
+        std::tuple<std::string, Property>{"foo", "test"},
+    };
+    size_t i = 0;
     for(auto it: frame.properties()) {
-        auto name = it.first;
-        if (name == "bar") {
-            CHECK(it.second.as_bool() == false);
-        } else if (name == "foo") {
-            CHECK(it.second.as_string() == "test");
-        } else if (name == "buzz") {
-            CHECK(it.second.as_double() == 22);
-        } else if (name == "fizz") {
-            CHECK(it.second.as_vector3d() == Vector3D(1, 2, 3));
-        } else {
-            CHECK(false);  // all case should have been covered
-        }
+        CHECK(it.first == std::get<0>(expected[i]));
+        CHECK(it.second == std::get<1>(expected[i]));
+        i += 1;
     }
 
     // Typed access to properties

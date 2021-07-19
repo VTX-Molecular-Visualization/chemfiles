@@ -1,5 +1,9 @@
-include(CheckCXXCompilerFlag)
-include(CheckCCompilerFlag)
+set(OLD_CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH}")
+set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${PROJECT_SOURCE_DIR}/cmake/CheckCompilerFlags")
+# import CheckCompilerFlag from cmake 3.19, and make sure it runs with older
+# versions of cmake as well
+include(CheckCompilerFlags/CheckCompilerFlag)
+set(CMAKE_MODULE_PATH "${OLD_CMAKE_MODULE_PATH}")
 
 set(CMAKE_REQUIRED_QUIET YES)
 
@@ -17,8 +21,8 @@ set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 
 # Manually check for some flags, as some versions of CMake do not support
 # `CMAKE_CXX_STANDARD`
-CHECK_CXX_COMPILER_FLAG("-std=c++11" COMPILER_SUPPORTS_CXX11)
-CHECK_CXX_COMPILER_FLAG("-std=c++0x" COMPILER_SUPPORTS_CXX0X)
+CHECK_COMPILER_FLAG(CXX "-std=c++11" COMPILER_SUPPORTS_CXX11)
+CHECK_COMPILER_FLAG(CXX "-std=c++0x" COMPILER_SUPPORTS_CXX0X)
 if(${COMPILER_SUPPORTS_CXX11})
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 elseif(${COMPILER_SUPPORTS_CXXOX})
@@ -31,7 +35,7 @@ else()
     message(SEND_ERROR "The ${CMAKE_CXX_COMPILER} compiler lacks C++11 support. Use another compiler.")
 endif()
 
-CHECK_C_COMPILER_FLAG("-std=c99" COMPILER_SUPPORTS_C99)
+CHECK_COMPILER_FLAG(C "-std=c99" COMPILER_SUPPORTS_C99)
 if(${COMPILER_SUPPORTS_C99})
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99")
 endif()
@@ -48,22 +52,9 @@ if(${CMAKE_CXX_COMPILER_ID} STREQUAL "Intel")
 endif()
 
 if(${EMSCRIPTEN})
-    if("${EMSCRIPTEN_VERSION}" VERSION_LESS "1.39.2")
-        # chemfiles requires a version of emscripten with a fix for
-        # https://github.com/emscripten-core/emscripten/issues/9605
-        message(FATAL_ERROR "emscripten ${EMSCRIPTEN_VERSION} is not supported, chemfiles requires at least 1.39.2")
+    if("${EMSCRIPTEN_VERSION}" VERSION_LESS "2")
+        message(FATAL_ERROR "emscripten ${EMSCRIPTEN_VERSION} is not supported, chemfiles requires version 2 or later")
     endif()
-
-    # setting EMSCRIPTEN_GENERATE_BITCODE_STATIC_LIBRARIES=ON here does not
-    # work, since it will only be taken into account on the next cmake
-    # configuration. So we explicitly run the code guarded by
-    # EMSCRIPTEN_GENERATE_BITCODE_STATIC_LIBRARIES=ON in Emscripten.cmake
-    # platform file.
-    SET(CMAKE_STATIC_LIBRARY_SUFFIX ".bc")
-
-	SET(CMAKE_C_CREATE_STATIC_LIBRARY "<CMAKE_C_COMPILER> -o <TARGET> <LINK_FLAGS> <OBJECTS>")
-	SET(CMAKE_CXX_CREATE_STATIC_LIBRARY "<CMAKE_CXX_COMPILER> -o <TARGET> <LINK_FLAGS> <OBJECTS>")
-    # --- end EMSCRIPTEN_GENERATE_BITCODE_STATIC_LIBRARIES
 
     set(EMCC_FLAGS "")
     set(EMCC_FLAGS "${EMCC_FLAGS} -s DISABLE_EXCEPTION_CATCHING=0")
@@ -87,8 +78,8 @@ endif()
 
 macro(add_warning_flag _flag_)
     string(REPLACE "++" "xx" _cleaned_flag_ ${_flag_})
-    CHECK_CXX_COMPILER_FLAG("${_flag_}" CXX_SUPPORTS${_cleaned_flag_})
-    CHECK_C_COMPILER_FLAG("${_flag_}" CC_SUPPORTS${_cleaned_flag_})
+    CHECK_COMPILER_FLAG(CXX "${_flag_}" CXX_SUPPORTS${_cleaned_flag_})
+    CHECK_COMPILER_FLAG(C "${_flag_}" CC_SUPPORTS${_cleaned_flag_})
     if(CXX_SUPPORTS${_cleaned_flag_})
         set(CHEMFILES_CXX_WARNINGS "${CHEMFILES_CXX_WARNINGS} ${_flag_}")
     endif()
@@ -121,6 +112,12 @@ if(MSVC)
         string(REGEX REPLACE "/W[0-4]" "/Wall" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
     else()
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Wall")
+    endif()
+
+    if (${MSVC_TOOLSET_VERSION} GREATER_EQUAL 141)
+        # supported since MVSC 15.6
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /experimental:external /external:anglebrackets /external:W0")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /experimental:external /external:anglebrackets /external:W0")
     endif()
 
     # Disable other warnings

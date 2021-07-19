@@ -1,8 +1,12 @@
 // Chemfiles, a modern library for chemistry file reading and writing
 // Copyright (C) Guillaume Fraux and contributors -- BSD license
 
-#include <limits>
+#include <cmath>
 #include <cstdint>
+
+#include <string>
+#include <limits>
+#include <algorithm>
 
 #include "chemfiles/parse.hpp"
 #include "chemfiles/utils.hpp"
@@ -10,18 +14,6 @@
 #include "chemfiles/string_view.hpp"
 
 using namespace chemfiles;
-
-static bool is_digit(char c) {
-    return '0' <= c && c <= '9';
-}
-
-static bool is_ascii_upper(char c) {
-    return 'A' <= c && c <= 'Z';
-}
-
-static bool is_ascii_lower(char c) {
-    return 'a' <= c && c <= 'z';
-}
 
 template <> int64_t chemfiles::parse(string_view input) {
     if (input.empty()) {
@@ -32,7 +24,7 @@ template <> int64_t chemfiles::parse(string_view input) {
     auto end = input.end();
 
     // skip whitespaces before number
-    while (it != end && is_whitespace(*it)) {
+    while (it != end && is_ascii_whitespace(*it)) {
         it++;
     }
 
@@ -47,7 +39,7 @@ template <> int64_t chemfiles::parse(string_view input) {
 
     int64_t result = 0;
     for (/*no initialization*/; it!=end; it++) {
-        if (is_digit(*it)) {
+        if (is_ascii_digit(*it)) {
             int64_t digit = static_cast<int64_t>(*it - '0');
             if (sign == -1) {
                 // Check for underflow
@@ -71,7 +63,7 @@ template <> int64_t chemfiles::parse(string_view input) {
     }
 
     // skip whitespaces after number if any
-    while (it != end && is_whitespace(*it)) {
+    while (it != end && is_ascii_whitespace(*it)) {
         it++;
     }
 
@@ -91,7 +83,7 @@ template <> uint64_t chemfiles::parse(string_view input) {
     auto end = input.end();
 
     // skip whitespaces before number
-    while (it != end && is_whitespace(*it)) {
+    while (it != end && is_ascii_whitespace(*it)) {
         it++;
     }
 
@@ -102,7 +94,7 @@ template <> uint64_t chemfiles::parse(string_view input) {
 
     uint64_t result = 0;
     for (/*no initialization*/; it!=end; it++) {
-        if (is_digit(*it)) {
+        if (is_ascii_digit(*it)) {
             uint64_t digit = static_cast<uint64_t>(*it - '0');
             // Check for overflow
             if (result <= ((std::numeric_limits<uint64_t>::max() - digit) / 10))
@@ -117,7 +109,7 @@ template <> uint64_t chemfiles::parse(string_view input) {
     }
 
     // skip whitespaces after number if any
-    while (it != end && is_whitespace(*it)) {
+    while (it != end && is_ascii_whitespace(*it)) {
         it++;
     }
 
@@ -138,7 +130,7 @@ template <> double chemfiles::parse(string_view input) {
     auto end = input.end();
 
     // skip whitespaces before number
-    while (it != end && is_whitespace(*it)) {
+    while (it != end && is_ascii_whitespace(*it)) {
         it++;
     }
 
@@ -154,7 +146,7 @@ template <> double chemfiles::parse(string_view input) {
     auto digit_start = it;
     // Get digits before decimal point or exponent, if any.
     double value = 0.0;
-    while (it != end && is_digit(*it)) {
+    while (it != end && is_ascii_digit(*it)) {
         value = value * 10.0 + static_cast<double>(*it - '0');
         it++;
     }
@@ -165,7 +157,7 @@ template <> double chemfiles::parse(string_view input) {
         it++;
         auto frac_start = it;
         double pow10 = 10.0;
-        while (it != end && is_digit(*it)) {
+        while (it != end && is_ascii_digit(*it)) {
             value += static_cast<double>(*it - '0') / pow10;
             pow10 *= 10.0;
             it++;
@@ -190,11 +182,11 @@ template <> double chemfiles::parse(string_view input) {
         }
 
         // Get digits of exponent, if any.
-        unsigned expon = 0;
-        while (it != end && is_digit(*it)) {
+        unsigned exponent = 0;
+        while (it != end && is_ascii_digit(*it)) {
             unsigned digit = static_cast<unsigned>(*it - '0');
-            if (expon <= ((std::numeric_limits<unsigned>::max() - digit) / 10))
-                expon = expon * 10 + digit;
+            if (exponent <= ((std::numeric_limits<unsigned>::max() - digit) / 10))
+                exponent = exponent * 10 + digit;
             else {
                 throw error("float exponent in {} is out of range for unsigned integer", input);
             }
@@ -204,18 +196,18 @@ template <> double chemfiles::parse(string_view input) {
 
         if (it == exponent_start) {
             throw error("missing exponent in '{}' to read a double", input);
-        } else if (expon > 308) {
+        } else if (exponent > 308) {
             throw error("{} is out of range for double", input);
         }
 
         // Calculate scaling factor.
-        while (expon >= 50) { scale *= 1e50; expon -= 50; }
-        while (expon >=  8) { scale *= 1e8;  expon -=  8; }
-        while (expon >   0) { scale *= 1e1;  expon -=  1; }
+        while (exponent >= 50) { scale *= 1e50; exponent -= 50; }
+        while (exponent >=  8) { scale *= 1e8;  exponent -=  8; }
+        while (exponent >   0) { scale *= 1e1;  exponent -=  1; }
     }
 
     // skip whitespaces after number if any
-    while (it != end && is_whitespace(*it)) {
+    while (it != end && is_ascii_whitespace(*it)) {
         it++;
     }
 
@@ -272,12 +264,11 @@ static int64_t decode_pure(string_view s) {
 
 /// Evaluates base^(power) and casts the result to int64_t while addressing
 /// issues where the result maybe rounded down due to floating point errors
-static int64_t pow_int(uint64_t base, uint64_t power) {
+static int64_t pow_int(size_t base, size_t power) {
     return static_cast<int64_t>(std::pow(base, power) + 0.5);
 }
 
-std::string chemfiles::encode_hydrid36(uint64_t width, int64_t value) {
-
+std::string chemfiles::encode_hybrid36(size_t width, int64_t value) {
     // the number is too negative to be encoded
     if (value < (1 - pow_int(10, width - 1))) {
         return std::string(width, '*');
@@ -306,8 +297,7 @@ std::string chemfiles::encode_hydrid36(uint64_t width, int64_t value) {
     return std::string(width, '*');
 }
 
-int64_t chemfiles::decode_hybrid36(uint64_t width, string_view s) {
-
+int64_t chemfiles::decode_hybrid36(size_t width, string_view s) {
     // This function is only called within chemfiles for fixed format files.
     // Therefore, the width should also be the length of the string as this is
     // known at compile time.
@@ -316,7 +306,7 @@ int64_t chemfiles::decode_hybrid36(uint64_t width, string_view s) {
     }
 
     auto f = s[0];
-    if (f == '-' || f == ' ' || is_digit(f)) {
+    if (f == '-' || f == ' ' || is_ascii_digit(f)) {
         // Negative number, these are not encoded
         return parse<int64_t>(s);
     }
@@ -328,7 +318,7 @@ int64_t chemfiles::decode_hybrid36(uint64_t width, string_view s) {
 
     if (digits_upper.find(f) != std::string::npos) {
         auto is_valid = std::all_of(s.begin(), s.end(), [](char c) {
-            return is_digit(c) || is_ascii_upper(c);
+            return is_ascii_digit(c) || is_ascii_uppercase(c);
         });
 
         if (!is_valid) {
@@ -340,7 +330,7 @@ int64_t chemfiles::decode_hybrid36(uint64_t width, string_view s) {
 
     if (digits_lower.find(f) != std::string::npos) {
         auto is_valid = std::all_of(s.begin(), s.end(), [](char c) {
-            return is_digit(c) || is_ascii_lower(c);
+            return is_ascii_digit(c) || is_ascii_lowercase(c);
          });
 
         if (!is_valid) {

@@ -1,25 +1,13 @@
 // Chemfiles, a modern library for chemistry file reading and writing
 // Copyright (C) Guillaume Fraux and contributors -- BSD license
 
-#include <cctype>
 #include <cstdint>
-
 #include <array>
 #include <string>
 #include <vector>
-#include <memory>
 #include <unordered_map>
 
-#include "chemfiles/File.hpp"
-#include "chemfiles/Format.hpp"
-#include "chemfiles/Atom.hpp"
-#include "chemfiles/Frame.hpp"
-#include "chemfiles/Property.hpp"
-#include "chemfiles/Residue.hpp"
-#include "chemfiles/Topology.hpp"
-#include "chemfiles/UnitCell.hpp"
-#include "chemfiles/Connectivity.hpp"
-
+#include "chemfiles/types.hpp"
 #include "chemfiles/utils.hpp"
 #include "chemfiles/parse.hpp"
 #include "chemfiles/warnings.hpp"
@@ -28,13 +16,37 @@
 #include "chemfiles/periodic_table.hpp"
 #include "chemfiles/external/optional.hpp"
 
+#include "chemfiles/File.hpp"
+#include "chemfiles/Atom.hpp"
+#include "chemfiles/Frame.hpp"
+#include "chemfiles/Property.hpp"
+#include "chemfiles/Residue.hpp"
+#include "chemfiles/Topology.hpp"
+#include "chemfiles/UnitCell.hpp"
+#include "chemfiles/Connectivity.hpp"
+#include "chemfiles/FormatMetadata.hpp"
+
 #include "chemfiles/formats/MOL2.hpp"
 
 using namespace chemfiles;
-template<> FormatInfo chemfiles::format_information<MOL2Format>() {
-    return FormatInfo("MOL2").with_extension(".mol2").description(
-        "Tripos mol2 text format"
-    );
+template<> const FormatMetadata& chemfiles::format_metadata<MOL2Format>() {
+    static FormatMetadata metadata;
+    metadata.name = "MOL2";
+    metadata.extension = ".mol2";
+    metadata.description = "Tripos mol2 text format";
+    metadata.reference = "http://chemyang.ccnu.edu.cn/ccb/server/AIMMS/mol2.pdf";
+
+    metadata.read = true;
+    metadata.write = true;
+    metadata.memory = true;
+
+    metadata.positions = true;
+    metadata.velocities = false;
+    metadata.unit_cell = true;
+    metadata.atoms = true;
+    metadata.bonds = true;
+    metadata.residues = true;
+    return metadata;
 }
 
 /// Fast-forward the file until the tag is found.
@@ -71,20 +83,20 @@ void MOL2Format::read_next(Frame& frame) {
         const auto& curr_pos = file_.tellpos();
 
         line = file_.readline();
-        auto trimed = trim(line);
+        auto trimmed = trim(line);
 
-        if (trimed == "@<TRIPOS>ATOM") {
+        if (trimmed == "@<TRIPOS>ATOM") {
             read_atoms(frame, natoms, charges);
-        } else if (trimed == "@<TRIPOS>BOND") {
+        } else if (trimmed == "@<TRIPOS>BOND") {
             read_bonds(frame, nbonds);
-        } else if (trimed == "@<TRIPOS>CRYSIN") {
+        } else if (trimmed == "@<TRIPOS>CRYSIN") {
             auto cryst = file_.readline();
 
-            double a, b, c, alpha, beta, gamma;
-            scan(cryst, a, b, c, alpha, beta, gamma);
+            Vector3D lengths, angles;
+            scan(cryst, lengths[0], lengths[1], lengths[2], angles[0], angles[1], angles[2]);
 
-            frame.set_cell(UnitCell(a, b, c, alpha, beta, gamma));
-        } else if (trimed == "@<TRIPOS>MOLECULE") {
+            frame.set_cell({lengths, angles});
+        } else if (trimmed == "@<TRIPOS>MOLECULE") {
             file_.seekpos(curr_pos);
             break;
         }
@@ -121,7 +133,7 @@ void MOL2Format::read_atoms(Frame& frame, size_t natoms, bool charges) {
         } else {
             is_sybyl = false;
             for (auto c: atom_name) {
-                if ((std::isalpha(c) == 0) || !find_in_periodic_table(atom_type + c)) {
+                if (!is_ascii_letter(c) || !find_in_periodic_table(atom_type + c)) {
                     break;
                 }
                 atom_type += c;
@@ -186,6 +198,7 @@ void MOL2Format::read_bonds(Frame& frame, size_t nbonds) {
         } else if (bond_order == "du") { // du is a dummy bond
             order = Bond::UNKNOWN;
         } else {
+            warning("MOL2 reader", "unknown bond order '{}'", bond_order);
             order = Bond::UNKNOWN;
         }
 
@@ -327,11 +340,13 @@ void MOL2Format::write_next(const Frame& frame) {
         );
     }
 
-    auto cell = frame.cell();
+    const auto& cell = frame.cell();
     if (cell.shape() != UnitCell::INFINITE) {
+        auto lengths = cell.lengths();
+        auto angles = cell.angles();
         file_.print("@<TRIPOS>CRYSIN\n");
         file_.print("   {:.4f}   {:.4f}   {:.4f}   {:.4f}   {:.4f}   {:.4f} 1 1\n",
-            cell.a(), cell.b(), cell.c(), cell.alpha(), cell.beta(), cell.gamma()
+            lengths[0], lengths[1], lengths[2], angles[0], angles[1], angles[2]
         );
     }
 

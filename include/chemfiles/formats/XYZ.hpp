@@ -10,15 +10,18 @@
 
 #include "chemfiles/File.hpp"
 #include "chemfiles/Format.hpp"
+
 #include "chemfiles/external/optional.hpp"
 
 namespace chemfiles {
 class Frame;
 class MemoryBuffer;
+class FormatMetadata;
 
-/// [XYZ] file format reader and writer.
+/// XYZ file format reader and writer.
 ///
-/// [XYZ]: http://openbabel.org/wiki/XYZ
+/// This class also support the extended XYZ specification, as defined in
+/// [ASE](https://wiki.fysik.dtu.dk/ase/ase/io/formatoptions.html#extxyz)
 class XYZFormat final: public TextFormat {
 public:
     XYZFormat(std::string path, File::Mode mode, File::Compression compression):
@@ -37,7 +40,7 @@ private:
     size_t current_forward_step_ = 0;
 };
 
-template<> FormatInfo format_information<XYZFormat>();
+template<> const FormatMetadata& format_metadata<XYZFormat>();
 
 } // namespace chemfiles
 

@@ -4,6 +4,9 @@
 #ifndef CHEMFILES_CHFL_TYPES_H
 #define CHEMFILES_CHFL_TYPES_H
 
+#include <stdint.h>
+#include <stdbool.h>  // IWYU pragma: keep
+
 #include "chemfiles/exports.h"
 
 #if defined(__cplusplus) && !defined(INCLUDE_WHAT_YOU_USE)
@@ -93,11 +96,11 @@ typedef struct CHFL_RESIDUE CHFL_RESIDUE;
 
 /// An opaque type handling a selection.
 ///
-/// `CHFL_SELECTION` allow to select atoms in a `CHFL_FRAME`, from a selection
-/// language. The selection language is built by combining basic operations.
-/// Each basic operation follows the `<selector>[(<variable>)] <operator>
-/// <value>` structure, where `<operator>` is a comparison operator in
-/// `== != < <= > >=`.
+/// `CHFL_SELECTION` allow to select atoms in a `CHFL_FRAME` using chemfiles
+/// selection language. The selection language is built by combining basic
+/// operations, following the `<selector>[(<variable>)] <operator>
+/// <value>` structure, where `<operator>` is a comparison operator in `== != <
+/// <= > >=`.
 typedef struct CHFL_SELECTION CHFL_SELECTION;
 
 /// This class holds the data used in properties in `CHFL_FRAME` and
@@ -137,7 +140,7 @@ typedef enum {  // NOLINT: this is both a C and C++ file
     CHFL_CXX_ERROR = 255,
 } chfl_status;
 
-/// A 3-dimmensional vector for the chemfiles interface
+/// A 3-dimensional vector for the chemfiles interface
 typedef double chfl_vector3d[3];  // NOLINT: this is both a C and C++ file
 
 /// Get the version of the chemfiles library.
@@ -158,22 +161,61 @@ typedef enum {  // NOLINT: this is both a C and C++ file
     CHFL_BOND_TRIPLE = 3,
     /// Quadruple bond (present in some metals)
     CHFL_BOND_QUADRUPLE = 4,
-    /// Qintuplet bond (present in some metals)
-    CHFL_BOND_QINTUPLET = 5,
+    /// Quintuplet bond (present in some metals)
+    CHFL_BOND_QUINTUPLET = 5,
     /// Amide bond (required by some file formats)
     CHFL_BOND_AMIDE = 254,
     /// Aromatic bond (required by some file formats)
     CHFL_BOND_AROMATIC = 255,
 } chfl_bond_order;
 
-/// Free the memory associated with a chemfiles object.
-///
-/// This function is NOT equivalent to the standard C function `free`, as memory
-/// is acquired and released for all chemfiles objects using a references
-/// counter to allow direct modification of C++ objects.
-///
-/// @example{capi/chfl_atom/chfl_atom.c}
-CHFL_EXPORT void chfl_free(const void* object);
+/// Maximal size for a selection match
+#define CHFL_MAX_SELECTION_SIZE 4
+
+/// A `chfl_match` is a set of atomic indexes matching a given selection. The
+/// size of a match depends on the associated selection, and can vary from 1 to
+/// `CHFL_MAX_SELECTION_SIZE`.
+typedef struct {  // NOLINT: this is both a C and C++ file
+    /// The actual size of the match. Elements in `atoms` are significant up
+    /// to this value, and filled with `(uint64_t)-1` for all the other values.
+    uint64_t size;
+    /// Atomic indexes matching the associated selection
+    uint64_t atoms[CHFL_MAX_SELECTION_SIZE];
+} chfl_match;
+
+
+/// A `chfl_format_metadata` contains metadata associated with one format
+typedef struct {
+    /// Name of the format
+    const char* name;
+    /// Extension associated with the format, or `NULL` if there is no extension
+    /// associated.
+    const char* extension;
+    /// Extended, user-facing description of the format
+    const char* description;
+    /// URL pointing to the format definition/reference
+    const char* reference;
+
+    /// Is reading files in this format implemented?
+    bool read;
+    /// Is writing files in this format implemented?
+    bool write;
+    /// Does this format support in-memory IO?
+    bool memory;
+
+    /// Does this format support storing atomic positions?
+    bool positions;
+    /// Does this format support storing atomic velocities?
+    bool velocities;
+    /// Does this format support storing unit cell information?
+    bool unit_cell;
+    /// Does this format support storing atom names or types?
+    bool atoms;
+    /// Does this format support storing bonds between atoms?
+    bool bonds;
+    /// Does this format support storing residues?
+    bool residues;
+} chfl_format_metadata;
 
 #ifdef __cplusplus
 }

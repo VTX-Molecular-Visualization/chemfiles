@@ -9,20 +9,9 @@
 #include <array>
 #include <string>
 #include <vector>
-#include <memory>
 #include <algorithm>
-#include <functional>
 #include <unordered_map>
 #include <unordered_set>
-
-#include "chemfiles/Atom.hpp"
-#include "chemfiles/Connectivity.hpp"
-#include "chemfiles/File.hpp"
-#include "chemfiles/Format.hpp"
-#include "chemfiles/Frame.hpp"
-#include "chemfiles/Residue.hpp"
-#include "chemfiles/Topology.hpp"
-#include "chemfiles/UnitCell.hpp"
 
 #include "chemfiles/types.hpp"
 #include "chemfiles/utils.hpp"
@@ -34,6 +23,15 @@
 #include "chemfiles/string_view.hpp"
 #include "chemfiles/external/span.hpp"
 #include "chemfiles/external/optional.hpp"
+
+#include "chemfiles/Atom.hpp"
+#include "chemfiles/File.hpp"
+#include "chemfiles/Frame.hpp"
+#include "chemfiles/Residue.hpp"
+#include "chemfiles/Topology.hpp"
+#include "chemfiles/UnitCell.hpp"
+#include "chemfiles/Connectivity.hpp"
+#include "chemfiles/FormatMetadata.hpp"
 
 #include "chemfiles/formats/LAMMPSData.hpp"
 
@@ -48,10 +46,24 @@ static std::vector<size_t> guess_molecules(const Frame& frame);
 /// and matrix[i][i] / 2.
 static double tilt_factor(const Matrix3D& matrix, size_t i, size_t j);
 
-template<> FormatInfo chemfiles::format_information<LAMMPSDataFormat>() {
-    return FormatInfo("LAMMPS Data").description(
-        "LAMMPS text input data file"
-    );
+template<> const FormatMetadata& chemfiles::format_metadata<LAMMPSDataFormat>() {
+    static FormatMetadata metadata;
+    metadata.name = "LAMMPS Data";
+    metadata.extension = nullopt;
+    metadata.description = "LAMMPS input data file";
+    metadata.reference = "https://lammps.sandia.gov/doc/read_data.html";
+
+    metadata.read = true;
+    metadata.write = true;
+    metadata.memory = true;
+
+    metadata.positions = true;
+    metadata.velocities = true;
+    metadata.unit_cell = true;
+    metadata.atoms = true;
+    metadata.bonds = true;
+    metadata.residues = true;
+    return metadata;
 }
 
 atom_style::atom_style(std::string name): name_(std::move(name)) {
@@ -962,7 +974,7 @@ std::vector<size_t> guess_molecules(const Frame& frame) {
         }
     }
 
-    // Make sure the molids are consecutives
+    // Make sure the molids are consecutive
     std::unordered_map<size_t, size_t> molids_mapping;
     for (auto& molid: molids) {
         auto it = molids_mapping.find(molid);

@@ -2,15 +2,17 @@
 // Copyright (C) Guillaume Fraux and contributors -- BSD license
 
 #include <chemfiles.h>
-#include <string.h>
-#include <assert.h>
+#include <stdlib.h>
 
 int main() {
     // [example]
-    chfl_add_configuration("local-file.toml");
+    CHFL_ATOM* atom = chfl_atom("Na");
 
-    // reading a frame will now use atom names from the configuration
-    // ...
+    if (atom == NULL) {
+        /* handle error */
+    }
+
+    chfl_free(atom);
     // [example]
     return 0;
 }

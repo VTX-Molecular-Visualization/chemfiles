@@ -16,10 +16,9 @@
 namespace chemfiles {
 class Frame;
 class MemoryBuffer;
+class FormatMetadata;
 
-/// [CML] file format reader.
-///
-/// [CML]: http://xml-cml.org/
+/// CML file format reader.
 class CMLFormat final: public Format {
 public:
     CMLFormat(std::string path, File::Mode mode, File::Compression compression):
@@ -67,7 +66,7 @@ private:
     std::unordered_map<std::string, size_t> ref_to_id_;
 };
 
-template<> FormatInfo format_information<CMLFormat>();
+template<> const FormatMetadata& format_metadata<CMLFormat>();
 
 } // namespace chemfiles
 

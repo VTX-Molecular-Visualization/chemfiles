@@ -12,17 +12,17 @@
 
 #include "chemfiles/File.hpp"
 #include "chemfiles/Format.hpp"
+
 #include "chemfiles/Residue.hpp"
 #include "chemfiles/UnitCell.hpp"
 
 namespace chemfiles {
 class Frame;
 class MemoryBuffer;
+class FormatMetadata;
 
-/// [mmCIF] Crystallographic Information Framework for MacroMolecules 
+/// mmCIF Crystallographic Information Framework for MacroMolecules
 /// reader and writer.
-///
-/// [mmCIF]: http://mmcif.wwpdb.org/
 class mmCIFFormat final: public Format {
 public:
     mmCIFFormat(std::string path, File::Mode mode, File::Compression compression) :
@@ -49,7 +49,7 @@ private:
     /// Map of residues, indexed by residue id and chainid.
     std::map<std::pair<std::string, int64_t>, Residue> residues_;
     /// Set to true if the file is based on fractional coordinates.
-    /// Set to false if the file is based on cartn coordinates.
+    /// Set to false if the file is based on cartesian coordinates.
     bool uses_fract_;
     /// Storing the positions of all the steps in the file, so that we can
     /// just `seekpos` them instead of reading the whole step.
@@ -65,7 +65,7 @@ private:
     std::string pdb_idcode_;
 };
 
-template<> FormatInfo format_information<mmCIFFormat>();
+template<> const FormatMetadata& format_metadata<mmCIFFormat>();
 
 } // namespace chemfiles
 

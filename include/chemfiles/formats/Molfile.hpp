@@ -19,6 +19,7 @@ extern "C" {
 #include "chemfiles/external/optional.hpp"
 
 namespace chemfiles {
+class FormatMetadata;
 
 /// List all the VMD molfile plugins enabled. For more documentation about VMD
 /// molfile plugins, please see:
@@ -26,7 +27,6 @@ namespace chemfiles {
 enum MolfileFormat {
     DCD,                ///< DCD binary file format
     TRJ,                ///< Gromacs .trj file format
-    LAMMPS,             ///< Lammps trajectory files
     MOLDEN,             ///< Molden file format
 };
 
@@ -85,10 +85,9 @@ private:
     std::vector<Frame> frames_;
 };
 
-template<> FormatInfo format_information<Molfile<DCD>>();
-template<> FormatInfo format_information<Molfile<TRJ>>();
-template<> FormatInfo format_information<Molfile<LAMMPS>>();
-template<> FormatInfo format_information<Molfile<MOLDEN>>();
+template<> const FormatMetadata& format_metadata<Molfile<DCD>>();
+template<> const FormatMetadata& format_metadata<Molfile<TRJ>>();
+template<> const FormatMetadata& format_metadata<Molfile<MOLDEN>>();
 
 } // namespace chemfiles
 

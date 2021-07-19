@@ -31,13 +31,8 @@ TEST_CASE("Read files in MMTF format") {
         CHECK(approx_eq(positions[4778], Vector3D(-1.263, -2.837, -21.251 ), 1e-3));
 
         // Check the unit cell
-        auto cell = frame.cell();
-        CHECK(approx_eq(cell.a(), 63.150, 1e-3));
-        CHECK(approx_eq(cell.b(), 83.590, 1e-3));
-        CHECK(approx_eq(cell.c(), 53.800, 1e-3));
-        CHECK(approx_eq(cell.alpha(), 90.00, 1e-3));
-        CHECK(approx_eq(cell.beta(), 99.34, 1e-3));
-        CHECK(approx_eq(cell.gamma(), 90.00, 1e-3));
+        CHECK(approx_eq(frame.cell().lengths(), {63.150, 83.590,53.800}, 1e-3));
+        CHECK(approx_eq(frame.cell().angles(), {90.00, 99.34, 90.00}, 1e-3));
 
         // Check residue information
         CHECK(frame.topology().residues().size() == 801);
@@ -113,7 +108,7 @@ TEST_CASE("Read files in MMTF format") {
         CHECK(approx_eq(positions[0], Vector3D(-5.106, 16.212, 4.562), 1e-3));
         CHECK(approx_eq(positions[1401], Vector3D(5.601, -22.571, -16.631), 1e-3));
 
-        const auto& topology = frame.topology();
+        auto topology = frame.topology();
         CHECK(topology.are_linked(topology.residue(0), topology.residue(1)));
         CHECK(!topology.are_linked(topology.residue(0), topology.residue(2)));
         CHECK(topology.residue(0).get("is_standard_pdb")->as_bool());
@@ -126,13 +121,31 @@ TEST_CASE("Read files in MMTF format") {
         CHECK(approx_eq(positions[0], Vector3D( -9.134, 11.149, 6.990), 1e-3));
         CHECK(approx_eq(positions[1401], Vector3D(4.437, -13.250, -22.569), 1e-3));
 
-        const auto& topo2 = frame.topology();
-        CHECK(topo2.are_linked(topology.residue(0), topo2.residue(1)));
-        CHECK(!topo2.are_linked(topology.residue(0), topo2.residue(2)));
+        topology = frame.topology();
+        CHECK(topology.are_linked(topology.residue(0), topology.residue(1)));
+        CHECK(!topology.are_linked(topology.residue(0), topology.residue(2)));
         CHECK(topology.residue(0).get("composition_type")->as_string() == "L-PEPTIDE LINKING");
 
         // Check secondary structure
         CHECK(topology.residue(10).get("secondary_structure")->as_string() == "extended");
+    }
+
+    SECTION("Bug in 1HTQ") {
+        // Fast-forward in `read_step` calculates wrong indices
+        // https://github.com/chemfiles/chemfiles/issues/344
+        auto file = Trajectory("data/mmtf/1HTQ.mmtf");
+
+        auto frame = file.read_step(9);
+        CHECK(frame.size() == 97872);
+        auto positions = frame.positions();
+        CHECK(approx_eq(positions[0], Vector3D(103.657, 52.540, 137.019), 1e-3));
+        CHECK(approx_eq(positions[1401], Vector3D(73.297, 19.998, 146.804), 1e-3));
+
+        frame = file.read_step(1);
+        CHECK(frame.size() == 97872);
+        positions = frame.positions();
+        CHECK(approx_eq(positions[0], Vector3D(104.485, 52.282, 139.288), 1e-3));
+        CHECK(approx_eq(positions[1401], Vector3D(73.385, 19.914, 146.528), 1e-3));
     }
 
     SECTION("Successive steps") {
@@ -140,17 +153,16 @@ TEST_CASE("Read files in MMTF format") {
 
         auto frame = file.read();
 
-        const auto& topology = frame.topology();
+        auto topology = frame.topology();
         CHECK(topology.are_linked(topology.residue(0), topology.residue(1)));
         CHECK(!topology.are_linked(topology.residue(0), topology.residue(2)));
 
-        auto frame2= file.read();
+        frame = file.read();
+        topology = frame.topology();
+        CHECK(topology.are_linked(topology.residue(0), topology.residue(1)));
+        CHECK(!topology.are_linked(topology.residue(0), topology.residue(2)));
 
-        const auto& topo2 = frame.topology();
-        CHECK(topo2.are_linked(topology.residue(0), topo2.residue(1)));
-        CHECK(!topo2.are_linked(topology.residue(0), topo2.residue(2)));
-
-        auto frame3= file.read();
+        auto frame3 = file.read();
     }
 
     SECTION("Alternative locations and symmetry operations") {
@@ -182,6 +194,23 @@ TEST_CASE("Read files in MMTF format") {
         CHECK(last_residue.get("chainindex")->as_double() == -1.0);
     }
 
+    SECTION("Read reduced representation") {
+        auto file = Trajectory("data/mmtf/1HTQ_reduced.mmtf");
+        CHECK(file.nsteps() == 10);
+
+        auto frame = file.read_step(9);
+        CHECK(frame.size() == 12336);
+        auto positions = frame.positions();
+        CHECK(approx_eq(positions[0], Vector3D(104.656, 52.957, 138.038), 1e-3));
+        CHECK(approx_eq(positions[1401], Vector3D(66.292, -29.336, 158.267), 1e-3));
+
+        frame = file.read_step(1);
+        CHECK(frame.size() == 12336);
+        positions = frame.positions();
+        CHECK(approx_eq(positions[0], Vector3D(105.482, 51.793, 140.282), 1e-3));
+        CHECK(approx_eq(positions[1401], Vector3D(66.033, -29.676, 158.009), 1e-3));
+    }
+
     SECTION("GZ Files") {
         auto file = Trajectory("data/mmtf/1J8K.mmtf.gz");
 
@@ -199,7 +228,7 @@ TEST_CASE("Read files in MMTF format") {
     // Test fails on Windows due to timing of MSVC debug builds
     #ifndef CHEMFILES_WINDOWS
         // Test takes too long with valgrind
-        if (!is_valgrind_and_travis()) {
+        if (!is_valgrind_and_ci()) {
             auto file = Trajectory("data/mmtf/3J3Q.mmtf.gz");
             auto frame = file.read_step(0);
 
@@ -259,7 +288,7 @@ TEST_CASE("Write files in MMTF format") {
         file.write(file_r.read());
 
         auto frame_mod = file_r.read();
-        frame_mod.set_cell(UnitCell(10., 10., 10.));
+        frame_mod.set_cell(UnitCell({10, 10, 10}));
         file.write(frame_mod);
 
         file.close();

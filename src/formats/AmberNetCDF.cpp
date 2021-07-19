@@ -6,12 +6,6 @@
 #include <string>
 #include <vector>
 
-#include "chemfiles/File.hpp"
-#include "chemfiles/Format.hpp"
-#include "chemfiles/Frame.hpp"
-#include "chemfiles/UnitCell.hpp"
-#include "chemfiles/files/NcFile.hpp"
-
 #include "chemfiles/types.hpp"
 #include "chemfiles/config.h"
 #include "chemfiles/warnings.hpp"
@@ -19,14 +13,35 @@
 #include "chemfiles/external/span.hpp"
 #include "chemfiles/external/optional.hpp"
 
+
+#include "chemfiles/File.hpp"
+#include "chemfiles/Frame.hpp"
+#include "chemfiles/UnitCell.hpp"
+#include "chemfiles/FormatMetadata.hpp"
+
+#include "chemfiles/files/NcFile.hpp"
 #include "chemfiles/formats/AmberNetCDF.hpp"
 
 using namespace chemfiles;
 
-template<> FormatInfo chemfiles::format_information<AmberNetCDFFormat>() {
-    return FormatInfo("Amber NetCDF").with_extension(".nc").description(
-        "Amber convention for binary NetCDF molecular trajectories"
-    );
+template<> const FormatMetadata& chemfiles::format_metadata<AmberNetCDFFormat>() {
+    static FormatMetadata metadata;
+    metadata.name = "Amber NetCDF";
+    metadata.extension = ".nc";
+    metadata.description = "Amber convention for binary NetCDF molecular trajectories";
+    metadata.reference = "http://ambermd.org/netcdf/nctraj.xhtml";
+
+    metadata.read = true;
+    metadata.write = true;
+    metadata.memory = false;
+
+    metadata.positions = true;
+    metadata.velocities = true;
+    metadata.unit_cell = true;
+    metadata.atoms = false;
+    metadata.bonds = false;
+    metadata.residues = false;
+    return metadata;
 }
 
 //! Check the validity of a NetCDF file
@@ -120,35 +135,29 @@ UnitCell AmberNetCDFFormat::read_cell() {
 
     std::vector<size_t> start{step_, 0};
     std::vector<size_t> count{1, 3};
+    auto lengths_f = length_var.get(start, count);
+    auto angles_f = angles_var.get(start, count);
 
-    auto length = length_var.get(start, count);
-    auto angles = angles_var.get(start, count);
-
-    assert(length.size() == 3);
-    assert(angles.size() == 3);
+    auto lengths = Vector3D(
+        static_cast<double>(lengths_f[0]),
+        static_cast<double>(lengths_f[1]),
+        static_cast<double>(lengths_f[2])
+    );
+    auto angles = Vector3D(
+        static_cast<double>(angles_f[0]),
+        static_cast<double>(angles_f[1]),
+        static_cast<double>(angles_f[2])
+    );
 
     if (length_var.attribute_exists("scale_factor")) {
-        float scale_factor = length_var.float_attribute("scale_factor");
-        length[0] *= scale_factor;
-        length[1] *= scale_factor;
-        length[2] *= scale_factor;
+        lengths *= static_cast<double>(length_var.float_attribute("scale_factor"));
     }
 
     if (angles_var.attribute_exists("scale_factor")) {
-        float scale_factor = angles_var.float_attribute("scale_factor");
-        angles[0] *= scale_factor;
-        angles[1] *= scale_factor;
-        angles[2] *= scale_factor;
+        angles *= static_cast<double>(angles_var.float_attribute("scale_factor"));
     }
 
-    return {
-        static_cast<double>(length[0]),
-        static_cast<double>(length[1]),
-        static_cast<double>(length[2]),
-        static_cast<double>(angles[0]),
-        static_cast<double>(angles[1]),
-        static_cast<double>(angles[2])
-    };
+    return UnitCell(lengths, angles);
 }
 
 void AmberNetCDFFormat::read_array(span<Vector3D> array, const std::string& name) {
@@ -199,9 +208,9 @@ static void initialize(NcFile& file, size_t natoms, bool with_velocities) {
         file.add_variable<nc::NcFloat>("coordinates", "frame", "atom", "spatial");
     coordinates.add_string_attribute("units", "angstrom");
 
-    auto cell_lenght =
+    auto cell_length =
         file.add_variable<nc::NcFloat>("cell_lengths", "frame", "cell_spatial");
-    cell_lenght.add_string_attribute("units", "angstrom");
+    cell_length.add_string_attribute("units", "angstrom");
 
     auto cell_angles =
         file.add_variable<nc::NcFloat>("cell_angles", "frame", "cell_angular");
@@ -256,13 +265,16 @@ void AmberNetCDFFormat::write_cell(const UnitCell& cell) {
     auto length = file_.variable<nc::NcFloat>("cell_lengths");
     auto angles = file_.variable<nc::NcFloat>("cell_angles");
 
-    auto length_data = std::vector<float>{static_cast<float>(cell.a()),
-                                          static_cast<float>(cell.b()),
-                                          static_cast<float>(cell.c())};
+    auto cell_lengths = cell.lengths();
+    auto cell_angles = cell.angles();
 
-    auto angles_data = std::vector<float>{static_cast<float>(cell.alpha()),
-                                          static_cast<float>(cell.beta()),
-                                          static_cast<float>(cell.gamma())};
+    auto length_data = std::vector<float>{static_cast<float>(cell_lengths[0]),
+                                          static_cast<float>(cell_lengths[1]),
+                                          static_cast<float>(cell_lengths[2])};
+
+    auto angles_data = std::vector<float>{static_cast<float>(cell_angles[0]),
+                                          static_cast<float>(cell_angles[1]),
+                                          static_cast<float>(cell_angles[2])};
 
     std::vector<size_t> start{step_, 0};
     std::vector<size_t> count{1, 3};

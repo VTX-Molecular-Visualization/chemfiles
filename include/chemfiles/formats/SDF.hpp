@@ -15,10 +15,9 @@
 namespace chemfiles {
 class Frame;
 class MemoryBuffer;
+class FormatMetadata;
 
-/// [SDF] file format reader and writer.
-///
-/// [SDF]: http://accelrys.com/products/collaborative-science/biovia-draw/ctfile-no-fee.html
+/// SDF file format reader and writer.
 class SDFFormat final: public TextFormat {
 public:
     SDFFormat(std::string path, File::Mode mode, File::Compression compression):
@@ -32,7 +31,7 @@ public:
     optional<uint64_t> forward() override;
 };
 
-template<> FormatInfo format_information<SDFFormat>();
+template<> const FormatMetadata& format_metadata<SDFFormat>();
 
 } // namespace chemfiles
 

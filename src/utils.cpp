@@ -5,16 +5,16 @@
 #include <string>
 #include <vector>
 
-#include "chemfiles/config.h"
+#include "chemfiles/config.h"  // IWYU pragma: keep
 #include "chemfiles/utils.hpp"
 
 #ifdef CHEMFILES_WINDOWS
-#define WIN32_LEAN_AND_MEAN
 #include <windows.h>  // GetUserName & GetComputerNameEx
 #include <direct.h>  // _getcwd
 #define getcwd _getcwd
 #else
 #include <unistd.h>
+#include <limits.h>
 #endif
 
 std::string chemfiles::user_name() {
