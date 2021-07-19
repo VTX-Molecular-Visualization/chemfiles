@@ -6,6 +6,8 @@
 
 #include <string>
 #include <vector>
+#include <utility>
+#include <unordered_set>
 
 #include "chemfiles/exports.h"
 #include "chemfiles/types.hpp"
@@ -356,6 +358,14 @@ namespace chemfiles {
 		///
 		/// @example{frame/distance.cpp}
 		double distance(size_t i, size_t j) const;
+
+		/// Get the square distance between the atoms at indexes `i` and `j`, accounting
+		/// for periodic boundary conditions. The distance is expressed in angstroms.
+		/// Usefull for distance comparison optimization.
+		/// 
+		/// @throws chemfiles::OutOfBounds if `i` or `j` are bigger than the number
+		///         of atoms in this frame
+		double sqrDistance(size_t i, size_t j) const;
 
 		/// Get the angle formed by the atoms at indexes `i`, `j` and `k`,
 		/// accounting for periodic boundary conditions. The angle is expressed in

@@ -449,6 +449,18 @@ double Frame::distance(size_t i, size_t j) const {
     auto rij = positions_[i] - positions_[j];
     return cell_.wrap(rij).norm();
 }
+double Frame::sqrDistance(size_t i, size_t j) const {
+    if (i >= size() || j >= size()) {
+        throw out_of_bounds(
+            "out of bounds atomic index in `Frame::distance`: we have {} "
+            "atoms, but the index are {} and {}",
+            size(), i, j
+        );
+    }
+
+    auto rij = positions_[i] - positions_[j];
+    return cell_.wrap(rij).sqrNorm();
+}
 
 double Frame::angle(size_t i, size_t j, size_t k) const {
     if (i >= size() || j >= size() || k >= size()) {
@@ -557,8 +569,7 @@ size_t Frame::createBonds(std::vector<std::vector<size_t>>& cells,
                 for (size_t j = firstNeighborCell; (j < atomNumInCell) && (bondsCount < maxBonds); j++) {
                     size_t atom2 = cells[neighborCellIndex][j];
 
-               float interAtomicDist = this->distance(atom1, atom2);
-               interAtomicDist *= interAtomicDist;
+                    float interAtomicDist = this->sqrDistance(atom1, atom2);
 
                     //Perform distance test and ignore atoms with almost the same coordinates
                     if ((interAtomicDist > cutoffPow2) || (interAtomicDist < 0.001)) {
@@ -595,3 +606,4 @@ size_t Frame::createBonds(std::vector<std::vector<size_t>>& cells,
 
     return bondsCount;
 }
+
