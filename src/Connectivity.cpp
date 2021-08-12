@@ -242,9 +242,11 @@ void Connectivity::atom_removed(size_t index) {
     }
 }
 
-Bond::BondOrder Connectivity::bond_order(size_t i, size_t j) const {
+Bond::BondOrder Connectivity::bond_order(size_t i, size_t j) const
+{
     auto pos = bonds_.find(Bond(i, j));
-    if (pos != bonds_.end()) {
+    if ( pos != bonds_.end() )
+    {
         auto diff = std::distance(bonds_.cbegin(), pos);
         return bond_orders_[static_cast<size_t>(diff)];
     }
@@ -254,4 +256,22 @@ Bond::BondOrder Connectivity::bond_order(size_t i, size_t j) const {
         "No bond between {} and {} exists",
         i, j
     );
+}
+
+void Connectivity::change_bond_order(size_t i, size_t j, Bond::BondOrder order)
+{
+    auto & pos = bonds_.find(Bond(i, j));
+    if ( pos != bonds_.end() )
+    {
+        auto diff = std::distance(bonds_.cbegin(), pos);
+        bond_orders_[static_cast<size_t>(diff)] = order;
+    }
+    else
+    {
+        throw error(
+            "out of bounds atomic index in `Connectivity::bond_order`: "
+            "No bond between {} and {} exists",
+            i, j
+        );
+    }
 }

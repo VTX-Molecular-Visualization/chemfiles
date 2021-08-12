@@ -330,6 +330,9 @@ public:
 
     /// Get the bond order of the bond between i and j
     Bond::BondOrder bond_order(size_t i, size_t j) const;
+
+    void change_bond_order(size_t i, size_t j, Bond::BondOrder order);
+
 private:
     /// Recalculate the angles and the dihedrals from the bond list
     void recalculate() const;

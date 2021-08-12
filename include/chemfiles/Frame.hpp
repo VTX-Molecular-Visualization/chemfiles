@@ -5,14 +5,14 @@
 #define CHEMFILES_FRAME_HPP
 
 #include <string>
-#include <vector>
-#include <utility>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
 #include "chemfiles/exports.h"
-#include "chemfiles/types.hpp"
-#include "chemfiles/external/span.hpp"
 #include "chemfiles/external/optional.hpp"
+#include "chemfiles/external/span.hpp"
+#include "chemfiles/types.hpp"
 
 #include "chemfiles/Connectivity.hpp"
 #include "chemfiles/Property.hpp"
@@ -319,6 +319,11 @@ namespace chemfiles {
 		/// @throws OutOfBounds if `atom_i` or `atom_j` are greater than `size()`
 		void remove_bond(size_t atom_i, size_t atom_j) {
 			topology_.remove_bond(atom_i, atom_j);
+		}
+
+		void change_bond_order(size_t atom_i, size_t atom_j, Bond::BondOrder bond_order)
+		{
+			topology_.change_bond_order(atom_i, atom_j, bond_order);
 		}
 
 		/// Get a reference to the atom at the position `index`.

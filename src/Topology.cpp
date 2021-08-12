@@ -2,16 +2,16 @@
 // Copyright (C) Guillaume Fraux and contributors -- BSD license
 
 #include <cstddef>
-#include <vector>
 #include <unordered_map>
+#include <vector>
 
 #include "chemfiles/Atom.hpp"
 #include "chemfiles/Connectivity.hpp"
-#include "chemfiles/error_fmt.hpp"
 #include "chemfiles/Residue.hpp"
 #include "chemfiles/Topology.hpp"
-#include "chemfiles/sorted_set.hpp"
+#include "chemfiles/error_fmt.hpp"
 #include "chemfiles/external/optional.hpp"
+#include "chemfiles/sorted_set.hpp"
 
 using namespace chemfiles;
 
@@ -70,6 +70,12 @@ Bond::BondOrder Topology::bond_order(size_t atom_i, size_t atom_j) const {
     return connect_.bond_order(atom_i, atom_j);
 }
 
+
+void Topology::change_bond_order(size_t i, size_t j, Bond::BondOrder order)
+{
+    connect_.change_bond_order(i, j, order);
+}
+
 void Topology::remove(size_t i) {
     if (i >= size()) {
         throw out_of_bounds(
@@ -108,6 +114,8 @@ const std::vector<Bond>& Topology::bonds() const {
 const std::vector<Bond::BondOrder>& Topology::bond_orders() const {
     return connect_.bond_orders();
 }
+
+
 
 const std::vector<Angle>& Topology::angles() const {
     return connect_.angles().as_vec();
