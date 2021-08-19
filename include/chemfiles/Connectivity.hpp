@@ -331,6 +331,7 @@ public:
     /// Get the bond order of the bond between i and j
     Bond::BondOrder bond_order(size_t i, size_t j) const;
 
+    /// Change the bond order of the bond between i and j
     void change_bond_order(size_t i, size_t j, Bond::BondOrder order);
 
 private:
