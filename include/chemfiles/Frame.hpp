@@ -5,7 +5,6 @@
 #define CHEMFILES_FRAME_HPP
 
 #include <string>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 

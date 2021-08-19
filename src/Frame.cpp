@@ -344,7 +344,7 @@ void Frame::guess_bonds_cls() {
     if (totalCells > 40000000000)
     {
         throw error(
-            "Exceeded maximum cells"
+            "exceeded maximum cells"
         );
         return;
     }
