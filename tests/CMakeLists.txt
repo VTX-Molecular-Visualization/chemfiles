@@ -1,5 +1,5 @@
 # Update this value if you need to update the data file set
-set(TESTS_DATA_GIT "6fc982cdf888004671100d33d9f4fbe1ba670807")
+set(TESTS_DATA_GIT "235991a21b35bfd156d35a7084c75ddf0a637869")
 
 if(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/data/${TESTS_DATA_GIT}")
     message(STATUS "Downloading test data files")
@@ -7,7 +7,7 @@ if(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/data/${TESTS_DATA_GIT}")
         "https://github.com/chemfiles/tests-data/archive/${TESTS_DATA_GIT}.tar.gz"
         "${CMAKE_CURRENT_BINARY_DIR}/${TESTS_DATA_GIT}.tar.gz"
         SHOW_PROGRESS
-        EXPECTED_HASH SHA1=04f1e562022cd603fa51f940800c0a33cfc0c7a6
+        EXPECTED_HASH SHA1=d91217e19726b8de3eb0cef5f937e2f69b22f404
     )
 
     message(STATUS "Unpacking test data files")
@@ -77,6 +77,8 @@ function(chfl_define_test _name_)
     endif()
 endfunction()
 
+find_package(Threads REQUIRED)
+
 function(chfl_unit_test _name_ _file_)
     add_executable(${_name_} ${_file_} ${CHEMFILES_OBJECTS})
     # We need to pretend we are inside the DLL to access all functions
@@ -84,6 +86,13 @@ function(chfl_unit_test _name_ _file_)
     target_link_libraries(${_name_} $<TARGET_PROPERTY:chemfiles,LINK_LIBRARIES>)
     set_target_properties(${_name_} PROPERTIES LINKER_LANGUAGE CXX)
     target_include_directories(${_name_} SYSTEM PRIVATE ${EXTERNAL_INCLUDES})
+
+    if(THREADS_HAVE_PTHREAD_ARG)
+        target_compile_options(${_name_} PUBLIC "-pthread")
+    endif()
+    if(CMAKE_THREAD_LIBS_INIT)
+        target_link_libraries(${_name_} "${CMAKE_THREAD_LIBS_INIT}")
+    endif()
 
     chfl_define_test(${_name_})
 endfunction()

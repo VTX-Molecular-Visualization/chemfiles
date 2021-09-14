@@ -27,29 +27,31 @@ typedef std::function<void(const std::string& message)> warning_callback_t; // N
 /// @param callback callback function that will be called on each warning
 void CHFL_EXPORT set_warning_callback(warning_callback_t callback);
 
-/// Read configuration data from the file at `path`.
-///
-/// By default, chemfiles reads configuration from any file named
-/// `.chemfiles.toml` or `chemfiles.toml` in the current directory or any parent
-/// directory. This function can be used to add data from another configuration
-/// file.
-///
-/// This function will throw a `ConfigurationError` if there is no file at
-/// `path`, or if the file is incorrectly formatted. Data from the new
-/// configuration file will overwrite any existing data.
-///
-/// @example{add_configuration.cpp}
-///
-/// @param path path to the configuration file to add
-///
-/// @throws ConfigurationError if the file at `path` can not be read, or if it
-///                            is invalid.
-void CHFL_EXPORT add_configuration(const std::string& path);
-
 /// Get the list of formats chemfiles knows about, and all associated metadata
 ///
 /// @example{formats_list.cpp}
 std::vector<std::reference_wrapper<const FormatMetadata>> CHFL_EXPORT formats_list();
+
+/// Get the format that chemfiles would use to read a file at the given path.
+///
+/// The format is only guessed from the filename extension, chemfiles does not
+/// currently read the file to guess the format. Opening the file using the
+/// returned format string might still fail. For example, it will fail if the
+/// file is not actually formatted according to the guessed format; or the
+/// format/compression combination is not supported (e.g. `XTC / GZ` will not
+/// work since the XTC reader does not support compressed files).
+///
+/// The format is represented in a way compatible with the various `Trajectory`
+/// constructors, i.e. `"<format name> [/ <compression>]"`, where compression is
+/// optional.
+///
+/// @param path path of the file we are trying to read
+/// @param mode the opening mode of the file, can be 'r', 'a' or 'w'
+/// @return guessed format of the file
+/// @throw FormatError if no format matching this filename is found.
+///
+/// @example{guess_format.cpp}
+std::string CHFL_EXPORT guess_format(std::string path, char mode = 'r');
 
 } // namespace chemfiles
 

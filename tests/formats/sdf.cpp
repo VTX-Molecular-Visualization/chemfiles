@@ -96,31 +96,26 @@ TEST_CASE("Read files in SDF format") {
 }
 
 TEST_CASE("Errors in SDF format") {
-    auto file = Trajectory("data/sdf/bad/bad_atom_line.sdf");
+    auto file = Trajectory("data/sdf/bad/bad-atom-line.sdf");
     CHECK_THROWS_WITH(file.read(), "atom line is too small for SDF: '    3.7320   -0.0600'");
 
     CHECK_THROWS_WITH(
-        Trajectory("data/sdf/bad/bad_counts_line.sdf"),
-        "could not parse counts line: ' 21aaa           '"
+        Trajectory("data/sdf/bad/count-line-not-numbers.sdf"),
+        "could not parse counts line in SDF file: ' 21aaa           '"
     );
 
     CHECK_THROWS_WITH(
-        Trajectory("data/sdf/bad/bad_counts_line2.sdf"),
-        "could not parse counts line: '  0  0'"
-    );
-
-    CHECK_THROWS_WITH(
-        Trajectory("data/sdf/bad/blank.sdf"),
-        "could not parse counts line: 'asdf'"
+        Trajectory("data/sdf/bad/count-line-too-short.sdf"),
+        "counts line must have at least 10 characters in SFD file, it has 6: '  0  0'"
     );
 }
 
 TEST_CASE("Write files in SDF format") {
     auto tmpfile = NamedTempPath(".sdf");
     const auto expected_content =
-R"(NONAME
- chemfiles-lib
+R"(
 
+created by chemfiles
   4  3  0     0  0  0  0  0  0999 V2000
     1.0000    2.0000    3.0000 O   0  0  0  0  0  0  0  0  0  0  0  0
     1.0000    2.0000    3.0000 N   0  0  0  0  0  0  0  0  0  0  0  0
@@ -130,13 +125,13 @@ R"(NONAME
   2  3  2  0  0  0  0
   3  4  3  0  0  0  0
 M  END
-> <prop>
+> <string-property>
 prop1
 
 $$$$
 TEST
- chemfiles-lib
 
+created by chemfiles
  11  5  0     0  0  0  0  0  0999 V2000
     1.0000    2.0000    3.0000 O   0  0  0  0  0  0  0  0  0  0  0  0
     1.0000    2.0000    3.0000 N   0  3  0  0  0  0  0  0  0  0  0  0
@@ -155,27 +150,45 @@ TEST
   9 10  8  0  0  0  0
  10 11  4  0  0  0  0
 M  END
-> <prop>
+> <float property>
 1.23
 
+> <string-property>
+prop1
+
 $$$$
 TEST
- chemfiles-lib
 
+created by chemfiles
   1  0  0     0  0  0  0  0  0999 V2000
     1.0000    2.0000    3.0000 O   0  0  0  0  0  0  0  0  0  0  0  0
 M  END
-> <prop>
+> <bool property>
 false
 
+> <float property>
+1.23
+
+> <string-property>
+prop1
+
 $$$$
 TEST
- chemfiles-lib
 
+created by chemfiles
   1  0  0     0  0  0  0  0  0999 V2000
     1.0000    2.0000    3.0000 O   0  0  0  0  0  0  0  0  0  0  0  0
 M  END
-> <prop>
+> <bool property>
+false
+
+> <float property>
+1.23
+
+> <string-property>
+prop1
+
+> <vector property>
 1.0 2.0 3.0
 
 $$$$
@@ -189,7 +202,7 @@ $$$$
     frame.add_bond(0, 2, Bond::SINGLE);
     frame.add_bond(1, 2, Bond::DOUBLE);
     frame.add_bond(2, 3, Bond::TRIPLE);
-    frame.set("prop", Property("prop1"));
+    frame.set("string-property", Property("prop1"));
 
     auto file = Trajectory(tmpfile, 'w');
     file.write(frame);
@@ -215,17 +228,17 @@ $$$$
     frame.add_bond(8, 9, Bond::UNKNOWN);
 
     frame.set("name", Property("TEST"));
-    frame.set("prop", Property(1.23));
+    frame.set("float property", Property(1.23));
 
     file.write(frame);
 
     frame.clear_bonds();
     frame.resize(1);
 
-    frame.set("prop", Property(false));
+    frame.set("bool property", Property(false));
     file.write(frame);
 
-    frame.set("prop", Property(Vector3D{1.0, 2.0, 3.0}));
+    frame.set("vector property", Property(Vector3D{1.0, 2.0, 3.0}));
     file.write(frame);
 
     file.close();

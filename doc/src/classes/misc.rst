@@ -17,6 +17,8 @@ Basic types
 Format list and Metadata
 ------------------------
 
+.. doxygenfunction:: chemfiles::guess_format
+
 .. doxygenfunction:: chemfiles::formats_list
 
 .. doxygenclass:: chemfiles::FormatMetadata
@@ -68,9 +70,6 @@ nicely with any existing C++ error handling.
     :members:
 
 .. doxygenstruct:: chemfiles::SelectionError
-    :members:
-
-.. doxygenstruct:: chemfiles::ConfigurationError
     :members:
 
 .. doxygenstruct:: chemfiles::OutOfBounds

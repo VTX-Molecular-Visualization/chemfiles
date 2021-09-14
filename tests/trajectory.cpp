@@ -2,6 +2,7 @@
 // Copyright (C) Guillaume Fraux and contributors -- BSD license
 
 #include <fstream>
+#include <thread>
 #include <catch.hpp>
 
 #include "helpers.hpp"
@@ -191,12 +192,95 @@ TEST_CASE("Specify a format parameter") {
     frame = Trajectory(tmpfile, 'r', "XYZ /GZ").read();
     CHECK(frame.size() == 1);
     CHECK(frame[0].name() == "Fe");
-
-    // only the compression method, the format will be guessed from extension
-    frame = Trajectory(tmpfile, 'r', "/ GZ").read();
-    CHECK(frame.size() == 1);
-    CHECK(frame[0].name() == "Fe");
 }
+
+TEST_CASE("Guessing format") {
+    CHECK(guess_format("not-a-file.xyz") == "XYZ");
+    CHECK(guess_format("not-a-file.pdb") == "PDB");
+    CHECK(guess_format("not-a-file.nc") == "Amber NetCDF");
+
+    CHECK(guess_format("not-a-file.xyz.gz") == "XYZ / GZ");
+    CHECK(guess_format("not-a-file.xyz.bz2") == "XYZ / BZ2");
+    CHECK(guess_format("not-a-file.xyz.xz") == "XYZ / XZ");
+
+    CHECK_THROWS_WITH(
+        guess_format("not-a-file.unknown"),
+        "can not find a format associated with the '.unknown' extension"
+    );
+    CHECK_THROWS_WITH(
+        guess_format("not-a-file"),
+        "file at 'not-a-file' does not have an extension, provide a format name to read it"
+    );
+}
+
+static void read_from_multiple_threads(std::string filename, size_t n_atoms) {
+    auto n_steps = Trajectory(filename).nsteps();
+    size_t n_threads = 4;
+
+    auto thread_1 = std::thread([=](){
+        auto file = Trajectory(filename);
+        for (size_t i=0; i<n_steps; i += n_threads) {
+            auto frame = file.read_step(i);
+            CHECK(frame.size() == n_atoms);
+        }
+    });
+
+    auto thread_2 = std::thread([=](){
+        auto file = Trajectory(filename);
+        for (size_t i=1; i<n_steps; i += n_threads) {
+            auto frame = file.read_step(i);
+            CHECK(frame.size() == n_atoms);
+        }
+    });
+
+    auto thread_3 = std::thread([=](){
+        auto file = Trajectory(filename);
+        for (size_t i=2; i<n_steps; i += n_threads) {
+            auto frame = file.read_step(i);
+            CHECK(frame.size() == n_atoms);
+        }
+    });
+
+    auto thread_4 = std::thread([=](){
+        auto file = Trajectory(filename);
+        for (size_t i=3; i<n_steps; i += n_threads) {
+            auto frame = file.read_step(i);
+            CHECK(frame.size() == n_atoms);
+        }
+    });
+
+    thread_1.join();
+    thread_2.join();
+    thread_3.join();
+    thread_4.join();
+}
+
+// don't run threading tests on wasm/emscripten
+#ifndef __EMSCRIPTEN__
+
+TEST_CASE("reading a files from multiple threads") {
+    // text file
+    read_from_multiple_threads("data/xyz/water.xyz", 297);
+
+    // compressed files
+    read_from_multiple_threads("data/xyz/water.9.xyz.gz", 297);
+    read_from_multiple_threads("data/xyz/water.9.xyz.bz2", 297);
+    read_from_multiple_threads("data/xyz/water.blocks.xyz.xz", 297);
+
+    // non text files
+    read_from_multiple_threads("data/mmtf/1HTQ_reduced.mmtf", 12336);
+    read_from_multiple_threads("data/dcd/water.dcd", 297);
+    read_from_multiple_threads("data/trr/1aki.trr", 38376);
+    read_from_multiple_threads("data/xtc/ubiquitin.xtc", 20455);
+
+    // FIXME: these fail, probably because the underlying library maintains a
+    // pool of ressources without synchronization
+
+    // read_from_multiple_threads("data/tng/1aki.tng", 38376);
+    // read_from_multiple_threads("data/netcdf/water.nc", 297);
+}
+
+#endif
 
 TEST_CASE("Errors") {
     SECTION("Unknow opening mode") {

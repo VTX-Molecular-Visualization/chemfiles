@@ -127,9 +127,9 @@ TEST_CASE("Write files in LAMMPS data format") {
     "3 angle types\n"
     "2 dihedral types\n"
     "1 improper types\n"
-    "0 5.0 xlo xhi\n"
-    "0 6.062177826491071 ylo yhi\n"
-    "0 9.0 zlo zhi\n"
+    "0.0 5.0 xlo xhi\n"
+    "0.0 6.062177826491071 ylo yhi\n"
+    "0.0 9.0 zlo zhi\n"
     "1.5000000000000018 0.0 0.0 xy xz yz\n"
     "\n"
     "# Pair Coeffs\n"
@@ -221,7 +221,10 @@ TEST_CASE("Write files in LAMMPS data format") {
     frame[0].set_mass(25);
     frame[2].set_charge(-2.4);
 
-    Trajectory(tmpfile, 'w', "LAMMPS Data").write(frame);
+    auto traj = Trajectory(tmpfile, 'w', "LAMMPS Data");
+    traj.write(frame);
+    CHECK_THROWS_WITH(traj.write(frame), "LAMMPS Data format only supports writing one frame");
+    traj.close();
 
     std::ifstream checking(tmpfile);
     std::string content((std::istreambuf_iterator<char>(checking)),
