@@ -543,7 +543,8 @@ void PDBFormat::link_standard_residue_bonds(Frame& frame) {
     size_t previous_carboxylic_id = 0;
 
     for (const auto& residue: frame.topology().residues()) {
-        auto residue_table = PDBConnectivity::find(residue.name());
+
+        const auto & residue_table = PDBConnectivity::find(residue.name());
         if (!residue_table) {
             continue;
         }
@@ -553,15 +554,15 @@ void PDBFormat::link_standard_residue_bonds(Frame& frame) {
             atom_name_to_index[frame[atom].name()] =  atom;
         }
 
-        const auto& amide_nitrogen = atom_name_to_index.find("N");
-        const auto& amide_carbon = atom_name_to_index.find("C");
-
         if (!residue.id()) {
             warning("PDB reader", "got a residues without id, this should not happen");
             continue;
         }
 
         auto resid = *residue.id();
+
+        const auto& amide_nitrogen = atom_name_to_index.find("N");
+        const auto& amide_carbon = atom_name_to_index.find("C");
         if (link_previous_peptide &&
             amide_nitrogen != atom_name_to_index.end() &&
             resid == previous_residue_id + 1 )
