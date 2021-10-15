@@ -119,16 +119,15 @@ void mmCIFFormat::init_() {
 
             if (line_split[0] == "_struct.title") 
             {
-                if ( line_split.size() > 2 )
+                if ( line_split.size() > 1 )
                 {
-                    if ( line_split[1][0] == '\'' )
-                    {
-                        name_ = line_split[1].substr(1, line_split[1].size() - 2).to_string();
-                    }
-                    else
-                    {
-                        name_ = line_split[1].to_string();
-                    }
+                    auto struct_name = line.substr(13);
+                    struct_name = trim(struct_name);
+
+                    if ( struct_name[0] == '\'' )
+                        struct_name = struct_name.substr(1, struct_name.size() - 2);
+                   
+                    name_ = struct_name.to_string();
                 }
                 else
                 {
@@ -642,10 +641,10 @@ void mmCIFFormat::apply_symmetry(Frame& frame, const std::string & assembly_id)
             }
 
             // Avoid using this chain in future symmetry operations
-            std::string newChainID = std::string(chainID->as_string() + '\'');
-            std::string newChainName = "Ass-" + assemblyGenerator.assembly_id;
+            const std::string newChainID = std::string(chainID->as_string() + '\'');
+            //std::string newChainName = "Ass-" + assemblyGenerator.assembly_id;
             new_residue.set("chainid", newChainID);
-            new_residue.set("chainname", newChainName);
+            //new_residue.set("chainname", newChainName);
 
             for ( auto atom_id : residue )
             {
@@ -715,6 +714,11 @@ void mmCIFFormat::apply_symmetry(Frame& frame, const std::string & assembly_id)
 }
 void mmCIFFormat::fill_assembly()
 {
+    if ( category_map_.find("_pdbx_struct_assembly_gen") == category_map_.end() )
+    { 
+        return;
+    }
+
     auto pdbx_struct_assembly_gen = category_map_["_pdbx_struct_assembly_gen"];
     file_.seekpos(pdbx_struct_assembly_gen.position_data_start);
 
