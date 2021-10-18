@@ -149,8 +149,7 @@ void mmCIFFormat::init_() {
                 }
             }
         }
-
-        if ( in_loop )
+        else // if (in_loop)
         { 
             if ( line_split[0].find("_atom_site.") != std::string::npos ) {
                 init_atom_site();
@@ -158,8 +157,7 @@ void mmCIFFormat::init_() {
         }
 
         // Can be in loop or not
-        if ( line_split[0].find("_pdbx_struct_assembly_gen.") != std::string::npos )
-        {
+        if ( line_split[0].find("_pdbx_struct_assembly_gen.") != std::string::npos ) {
             addCategory("_pdbx_struct_assembly_gen", in_loop);
         }
         
@@ -173,7 +171,6 @@ void mmCIFFormat::init_() {
     }
 
     cell_ = UnitCell(lengths, angles);
-    //file_.seekpos(steps_positions_[0]);
 }
 
 void mmCIFFormat::init_atom_site()
@@ -189,19 +186,16 @@ void mmCIFFormat::init_atom_site()
     // After this block ends, we have the start of coordinates
     steps_positions_.push_back(reader_meta_data_.position);
 
-    if ( atom_site_map.find("type_symbol") == atom_site_map.end() )
-    {
+    if ( atom_site_map.find("type_symbol") == atom_site_map.end() ) {
         throw format_error("could not find _atom_site.type_symbol in '{}'", file_.path());
     }
-    if ( atom_site_map.find("Cartn_x") == atom_site_map.end() )
-    {
+    if ( atom_site_map.find("Cartn_x") == atom_site_map.end() ) {
         throw format_error("could not find _atom_site.Cartn_x in '{}'", file_.path());
     }
 
     // Do we have a special extension for multiple modes?
     auto model_position = atom_site_map.find("pdbx_PDB_model_num");
-    if ( model_position == atom_site_map.end() )
-    {
+    if ( model_position == atom_site_map.end() ) {
         // If not, we are done
         file_.seekpos(steps_positions_[0]);
         return;
@@ -220,16 +214,14 @@ void mmCIFFormat::init_atom_site()
         //reader_meta_data_.line = line;
 
         // a break in the text ends the models
-        if ( line.empty() || line == "line_" || line[0] == '#' )
-        {
+        if ( line.empty() || line == "line_" || line[0] == '#' ) {
             break;
         }
 
         auto line_split = split(line, ' ');
         size_t current_position = parse<size_t>(line_split[model_position->second]);
 
-        if ( current_position != last_position )
-        {
+        if ( current_position != last_position ) {
             steps_positions_.push_back(reader_meta_data_.position);
             last_position = current_position;
         }
@@ -267,7 +259,7 @@ void mmCIFFormat::addCategory(const std::string& category_name, bool is_loop)
         const size_t category_name_length = category_name.size() + 1;    //Size + separator
         size_t property_index = 0;
 
-        // Fill atom_site attributes
+        // Fill attributes
         auto line = reader_meta_data_.line;
 
         do
@@ -299,7 +291,7 @@ void mmCIFFormat::fill_loop_properties(const std::string& category_name, std::ma
     const size_t category_name_length = category_name.size() + 1;    //Size + separator
     size_t property_index = 0;
 
-    // Fill atom_site attributes
+    // Fill attributes
     auto line = reader_meta_data_.line;
 
     do
@@ -324,23 +316,22 @@ void mmCIFFormat::fill_loop_properties(const std::string& category_name, std::ma
     } while ( !file_.eof() );
 }
 
-void mmCIFFormat::read_item(const mmCIFCategoryHeader& header, std::vector<string_view>& property)
+void mmCIFFormat::read_item_properties(const mmCIFCategoryHeader& header, std::vector<std::string>& properties)
 {
-    property.clear();
+    properties.clear();
 
-    read_line_and_split(property);
+    read_property_line(properties);
 
-    while ( property.size() < header.property_map.size() )
+    while ( properties.size() < header.property_map.size() )
     {
-        if ( reader_meta_data_.line.empty() || reader_meta_data_.line == "loop_" || reader_meta_data_.line[0] == '#' )
-        {
+        if ( reader_meta_data_.line.empty() || reader_meta_data_.line == "loop_" || reader_meta_data_.line[0] == '#' ) {
             break;
         }
 
-        read_line_and_split(property);
+        read_property_line(properties);
     }
 }
-void mmCIFFormat::read_line_and_split(std::vector<string_view>& split)
+void mmCIFFormat::read_property_line(std::vector<std::string>& properties)
 {
     reader_meta_data_.position = file_.tellpos();
     auto line = file_.readline();
@@ -357,7 +348,7 @@ void mmCIFFormat::read_line_and_split(std::vector<string_view>& split)
         {
             if ( inString )
             {
-                split.emplace_back(line.substr(wordStart, current - wordStart - 1));
+                properties.emplace_back(line.substr(wordStart, current - wordStart).to_string());
                 inString = false;
             }
             else
@@ -372,7 +363,7 @@ void mmCIFFormat::read_line_and_split(std::vector<string_view>& split)
         {
             if ( wordStart != current )
             {
-                split.emplace_back(line.substr(wordStart, current - wordStart));
+                properties.emplace_back(line.substr(wordStart, current - wordStart).to_string());
             }
 
             current++;
@@ -383,7 +374,6 @@ void mmCIFFormat::read_line_and_split(std::vector<string_view>& split)
             current++;
         }
     }
-
 }
 
 size_t mmCIFFormat::nsteps() {
@@ -406,11 +396,6 @@ void mmCIFFormat::read(Frame& frame) {
     if (!pdb_idcode_.empty()) {
         frame.set("pdb_idcode", pdb_idcode_);
     }
-
-    // Reset state to previous line
-    //file_.seekpos(reader_meta_data_.position);
-    file_.seekpos(0);
-
 
     read_atom_site(frame);
     for ( const auto& residue : residues_ )
@@ -438,7 +423,8 @@ void mmCIFFormat::read_atom_site(Frame& frame)
 {   // The following map operations can be moved to the constructor
     // and stored with optional. I don't know which solution is better.
 
-    auto atom_site_map = category_map_["_atom_site"].property_map;
+    auto atom_site = category_map_["_atom_site"];
+    auto atom_site_map = atom_site.property_map;
 
     // These are required for atoms
     auto type_symbol = atom_site_map.at("type_symbol");
@@ -473,11 +459,11 @@ void mmCIFFormat::read_atom_site(Frame& frame)
     file_.seekpos(steps_positions_[0]);
     reader_meta_data_.position = steps_positions_[0];
 
-    size_t last_position = 0;
+    size_t last_step_position = 0;
     if ( model_position != atom_site_map.end() )
     {
         auto line = file_.readline();
-        last_position = parse<size_t>(split(line, ' ')[model_position->second]);
+        last_step_position = parse<size_t>(split(line, ' ')[model_position->second]);
         // Reset file position so that the loop below can start by reading the
         // first line
         file_.seekpos(steps_positions_[0]);
@@ -486,12 +472,14 @@ void mmCIFFormat::read_atom_site(Frame& frame)
     while ( !file_.eof() )
     {
         auto line = file_.readline();
-        auto line_split = split(line, ' ');
-        if ( line.empty() || line == "loop_" || line[0] == '#' )
+        reader_meta_data_.position = file_.tellpos();
+
+        if ( file_.tellpos() >= atom_site.position_data_end )
         {
             break;
         }
 
+        auto line_split = split(line, ' ');
         if ( line_split.size() != atom_site_map.size() )
         {
             throw format_error("line '{}' has {} items not {}",
@@ -499,13 +487,13 @@ void mmCIFFormat::read_atom_site(Frame& frame)
             );
         }
 
-        size_t current_position = 0;
+        size_t current_step_position = 0;
         if ( model_position != atom_site_map.end() )
         {
-            current_position = parse<size_t>(line_split[model_position->second]);
+            current_step_position = parse<size_t>(line_split[model_position->second]);
         }
 
-        if ( current_position != last_position )
+        if ( current_step_position != last_step_position )
         {
             break;
         }
@@ -531,7 +519,6 @@ void mmCIFFormat::read_atom_site(Frame& frame)
         auto z = cif_to_double(line_split[cartn_z].to_string());
         frame.add_atom(std::move(atom), Vector3D(x, y, z));
 
-        reader_meta_data_.position = file_.tellpos();
 
         if ( label_comp_id == atom_site_map.end() || label_asym_id == atom_site_map.end() )
         {
@@ -564,7 +551,6 @@ void mmCIFFormat::read_atom_site(Frame& frame)
 
         if ( map_residues_indexes.find({ chainid, resid }) == map_residues_indexes.end() )
         {
-
             auto name = line_split[label_comp_id->second];
             Residue residue(name.to_string(), resid);
             residue.add_atom(atom_id);
@@ -594,12 +580,12 @@ void mmCIFFormat::read_atom_site(Frame& frame)
             residues_[map_residues_indexes.at({ chainid, resid })].add_atom(atom_id);
         }
     }
-
 }
 
 void mmCIFFormat::apply_symmetry(Frame& frame, const std::string & assembly_id)
 {
     const auto original_size = frame.size();
+    const auto original_residue_size = frame.topology().residues().size();
     const auto original_bond_size = frame.topology().bonds().size();
 
     using bond_w_order = std::pair<Bond, Bond::BondOrder>;
@@ -622,14 +608,13 @@ void mmCIFFormat::apply_symmetry(Frame& frame, const std::string & assembly_id)
 
         std::vector<size_t> old_to_sym(original_size, 0);
         std::vector<Residue> residues_to_add;
+        residues_to_add.reserve(original_residue_size);
 
         for ( const auto& residue : frame.topology().residues() )
         {
             auto chainID = residue.get("chainid");
-            auto assembly_s = residue.get("assembly");
 
-            if ( !chainID || assemblyGenerator.targets.find(chainID->as_string()) == assemblyGenerator.targets.end() )
-            { 
+            if ( !chainID || assemblyGenerator.targets.find(chainID->as_string()) == assemblyGenerator.targets.end() ) { 
                 continue;
             }
 
@@ -642,8 +627,8 @@ void mmCIFFormat::apply_symmetry(Frame& frame, const std::string & assembly_id)
 
             // Avoid using this chain in future symmetry operations
             const std::string newChainID = std::string(chainID->as_string() + '\'');
-            //std::string newChainName = "Ass-" + assemblyGenerator.assembly_id;
             new_residue.set("chainid", newChainID);
+            //std::string newChainName = "Ass-" + assemblyGenerator.assembly_id;
             //new_residue.set("chainname", newChainName);
 
             for ( auto atom_id : residue )
@@ -653,7 +638,6 @@ void mmCIFFormat::apply_symmetry(Frame& frame, const std::string & assembly_id)
                 {
                     continue;
                 }
-
 
                 auto new_atom = frame[atom_id];
                 auto new_position = frame.positions()[atom_id];
@@ -678,6 +662,8 @@ void mmCIFFormat::apply_symmetry(Frame& frame, const std::string & assembly_id)
 
             residues_to_add.emplace_back(new_residue);
         }
+
+        residues_to_add.shrink_to_fit();
 
         for ( auto&& residue : residues_to_add )
         {
@@ -712,6 +698,26 @@ void mmCIFFormat::apply_symmetry(Frame& frame, const std::string & assembly_id)
         frame.add_bond(bond.first[0], bond.first[1], bond.second);
     }
 }
+
+// TODO need to use std::string because read_multi_line can't return a string_view.
+void mmCIFFormat::read_inline_property(const std::vector<string_view>& line_split, std::string& data)
+{
+    if ( line_split.size() == 2 )
+    {
+        data = line_split[1].to_string();
+    }
+    else
+    {
+        auto line = file_.readline();
+        reader_meta_data_.line = line;
+
+        if ( line[0] == ';' )
+            data = read_multi_line();
+        else
+            data = line.to_string();
+    }
+}
+
 void mmCIFFormat::fill_assembly()
 {
     if ( category_map_.find("_pdbx_struct_assembly_gen") == category_map_.end() )
@@ -797,8 +803,8 @@ void mmCIFFormat::fill_assembly()
                operation_expression = operation_expression.substr(1, operation_expression.size() - 2);
            }
 
-           std::set<string_view> targets = std::set<string_view>();
-           fill_targets_vector(targets_str, targets);
+           std::set<std::string> targets = std::set<std::string>();
+           fill_assembly_targets_vector(targets_str, targets);
 
            build_assembly_generators(assembly_id.to_string(), operation_expression, targets);
            line = file_.readline();
@@ -807,8 +813,8 @@ void mmCIFFormat::fill_assembly()
     else
     {
         std::string assemblyGeneratorID;
-        string_view operation_expression;
-        std::set<string_view> targets;
+        std::string operation_expression;
+        std::set<std::string> targets;
 
         auto line = file_.readline();
         do
@@ -820,15 +826,17 @@ void mmCIFFormat::fill_assembly()
             
             if (line_split[0] == "_pdbx_struct_assembly_gen.assembly_id")
             {
-                assemblyGeneratorID = line_split[1].to_string();
+                read_inline_property(line_split, assemblyGeneratorID);
             }
             else if ( line_split[0] == "_pdbx_struct_assembly_gen.oper_expression" )
             {
-                operation_expression = line_split[1];
+                read_inline_property(line_split, operation_expression);
             }
             else if ( line_split[0] == "_pdbx_struct_assembly_gen.asym_id_list" )
             {
-                fill_targets_vector(line_split[1], targets);
+                std::string target_list;
+                read_inline_property(line_split, target_list);
+                fill_assembly_targets_vector(target_list, targets);
             }
 
             line = file_.readline();
@@ -865,30 +873,119 @@ void mmCIFFormat::fill_assembly_operations()
     auto vector_y = struct_oper_list_map.at("vector[2]");
     auto vector_z = struct_oper_list_map.at("vector[3]");
 
-    std::vector<string_view> line_split = std::vector<string_view>();
-    line_split.reserve(struct_oper_list_map.size());
-
-    while (file_.tellpos() < struct_oper_list.position_data_end )
+    if ( struct_oper_list.is_loop )
     {
-        read_item(struct_oper_list, line_split);
+        std::vector<std::string> line_split = std::vector<std::string>();
+        line_split.reserve(struct_oper_list_map.size());
 
-        if ( line_split.size() < struct_oper_list_map.size() )
+        while (file_.tellpos() < struct_oper_list.position_data_end )
         {
-            throw format_error("_pdbx_struct_oper_list does not contains right number of properties ({} instead of {}) at position {} in '{}' ", 
-                               line_split.size(), struct_oper_list_map.size(), file_.tellpos(),
-                               file_.path());
+            read_item_properties(struct_oper_list, line_split);
+
+            if ( line_split.size() < struct_oper_list_map.size() )
+            {
+                throw format_error("_pdbx_struct_oper_list does not contains right number of properties ({} instead of {}) at position {} in '{}' ", 
+                                   line_split.size(), struct_oper_list_map.size(), file_.tellpos(),
+                                   file_.path());
+            }
+
+            auto rotation = Matrix3D(
+                cif_to_double(line_split[matrix_1_1]), cif_to_double(line_split[matrix_1_2]), cif_to_double(line_split[matrix_1_3]),
+                cif_to_double(line_split[matrix_2_1]), cif_to_double(line_split[matrix_2_2]), cif_to_double(line_split[matrix_2_3]),
+                cif_to_double(line_split[matrix_3_1]), cif_to_double(line_split[matrix_3_2]), cif_to_double(line_split[matrix_3_3]));
+
+            auto translation = Vector3D(cif_to_double(line_split[vector_x]),
+                                        cif_to_double(line_split[vector_y]),
+                                        cif_to_double(line_split[vector_z]));
+
+            assembly_.assembly_operations.emplace(line_split[operation_id], AssemblyOperation(translation, rotation));
+        }
+    }
+    else
+    {
+        string_view id_value;
+
+        double matrix_1_1_value = 0.;
+        double matrix_1_2_value = 0.;
+        double matrix_1_3_value = 0.;
+        double matrix_2_1_value = 0.;
+        double matrix_2_2_value = 0.;
+        double matrix_2_3_value = 0.;
+        double matrix_3_1_value = 0.;
+        double matrix_3_2_value = 0.;
+        double matrix_3_3_value = 0.;
+
+        double vector_x_value = 0.;
+        double vector_y_value = 0.;
+        double vector_z_value = 0.;
+
+        while ( file_.tellpos() < struct_oper_list.position_data_end )
+        {
+            auto line = file_.readline();
+            auto line_split = split(line, ' ');
+
+            if ( line_split[0].ends_with(".id") )
+            {
+                id_value = line_split[1];
+            }
+            else if ( line_split[0].ends_with(".matrix[1][1]") )
+            {
+                matrix_1_1_value = cif_to_double(line_split[1].to_string());
+            }
+            else if ( line_split[0].ends_with(".matrix[1][2]") )
+            {
+                matrix_1_2_value = cif_to_double(line_split[1].to_string());
+            }
+            else if ( line_split[0].ends_with(".matrix[1][3]") )
+            {
+                matrix_1_3_value = cif_to_double(line_split[1].to_string());
+            }
+            else if ( line_split[0].ends_with(".matrix[2][1]") )
+            {
+                matrix_2_1_value = cif_to_double(line_split[1].to_string());
+            }
+            else if ( line_split[0].ends_with(".matrix[2][2]") )
+            {
+                matrix_2_2_value = cif_to_double(line_split[1].to_string());
+            }
+            else if ( line_split[0].ends_with(".matrix[2][3]") )
+            {
+                matrix_2_3_value = cif_to_double(line_split[1].to_string());
+            }
+            else if ( line_split[0].ends_with(".matrix[3][1]") )
+            {
+                matrix_3_1_value = cif_to_double(line_split[1].to_string());
+            }
+            else if ( line_split[0].ends_with(".matrix[3][2]") )
+            {
+                matrix_3_2_value = cif_to_double(line_split[1].to_string());
+            }
+            else if ( line_split[0].ends_with(".matrix[3][3]") )
+            {
+                matrix_3_3_value = cif_to_double(line_split[1].to_string());
+            }
+            else if ( line_split[0].ends_with(".vector[1]") )
+            {
+                vector_x_value = cif_to_double(line_split[1].to_string());
+            }
+            else if ( line_split[0].ends_with(".vector[2]") )
+            {
+                vector_y_value = cif_to_double(line_split[1].to_string());
+            }
+            else if ( line_split[0].ends_with(".vector[3]") )
+            {
+                vector_z_value = cif_to_double(line_split[1].to_string());
+            }
         }
 
         auto rotation = Matrix3D(
-            cif_to_double(line_split[matrix_1_1].to_string()), cif_to_double(line_split[matrix_1_2].to_string()), cif_to_double(line_split[matrix_1_3].to_string()),
-            cif_to_double(line_split[matrix_2_1].to_string()), cif_to_double(line_split[matrix_2_2].to_string()), cif_to_double(line_split[matrix_2_3].to_string()),
-            cif_to_double(line_split[matrix_3_1].to_string()), cif_to_double(line_split[matrix_3_2].to_string()), cif_to_double(line_split[matrix_3_3].to_string()));
+            matrix_1_1_value, matrix_1_2_value, matrix_1_3_value,
+            matrix_2_1_value, matrix_2_2_value, matrix_2_3_value, 
+            matrix_3_1_value, matrix_3_2_value, matrix_3_3_value);
 
-        auto translation = Vector3D(cif_to_double(line_split[vector_x].to_string()),
-                                    cif_to_double(line_split[vector_y].to_string()),
-                                    cif_to_double(line_split[vector_z].to_string()));
+        auto translation = Vector3D(vector_x_value, vector_y_value, vector_z_value);
 
-        assembly_.assembly_operations.emplace(line_split[operation_id].to_string(), AssemblyOperation(translation, rotation));
+        assembly_.assembly_operations.emplace(id_value, AssemblyOperation(translation, rotation));
     }
 }
 
@@ -968,11 +1065,11 @@ std::string mmCIFFormat::read_multi_line()
 {
     std::string result = "";
     auto line = reader_meta_data_.line;
-     
+    
     while ( !file_.eof() )
     {
         result += line.substr(1).to_string();
-            
+
         line = file_.readline();
         trim(line);
 
@@ -985,27 +1082,27 @@ std::string mmCIFFormat::read_multi_line()
     return result;
 }
 
-void mmCIFFormat::fill_targets_vector(const string_view& targets_str, std::set<string_view>& targets)
+void mmCIFFormat::fill_assembly_targets_vector(const string_view& targets_str, std::set<std::string>& targets)
 {
-    string_view target_group_str;
+    string_view target_group_sv;
 
     if ( targets_str[0] == '\'' && targets_str[targets_str.size() - 1] == '\'' )
     {
-        target_group_str = targets_str.substr(1, targets_str.size() - 2);
+        target_group_sv = targets_str.substr(1, targets_str.size() - 2);
     }
     else
     {
-        target_group_str = targets_str;
+        target_group_sv = targets_str;
     }
 
-    auto target_vector = split(target_group_str, ',');
+    auto target_vector = split(target_group_sv, ',');
 
     for ( auto target : target_vector )
         targets.emplace(target);
 }
 void mmCIFFormat::build_assembly_generators(const std::string& assembly_id,
                                             const string_view& operation_expression,
-                                            const std::set<string_view>& targets)
+                                            const std::set<std::string>& targets)
 {
     size_t special_symbol_position;
     if ( (special_symbol_position = operation_expression.find_last_of('(')) != std::string::npos )

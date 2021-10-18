@@ -103,19 +103,21 @@ private:
 
     void init_atom_site();
     void addCategory(const std::string& category_name, bool is_loop);
+    void fill_loop_properties(const std::string& category_name, std::map<std::string, size_t>& property_map);
 
     void read_atom_site(Frame& frame);
     void read_struct_oper_list(Frame& frame);
 
+    void read_inline_property(const std::vector<string_view>& line_split, std::string& data);
+    void read_item_properties(const mmCIFCategoryHeader& header, std::vector<std::string>& property);
+    void read_property_line(std::vector<std::string>& properties);
     void fill_assembly();
     void fill_assembly_operations();
+    void fill_assembly_targets_vector(const string_view& targets_str, std::set<std::string>& targets);
+    void build_assembly_generators(const std::string& assembly_id, const string_view& operation_expression, const std::set<std::string>& targets);
 
     void apply_symmetry(Frame& frame, const std::string & assembly_id);
 
-    void fill_loop_properties(const std::string& category_name, std::map<std::string, size_t>& property_map);
-
-    void fill_targets_vector(const string_view& targets_str, std::set<string_view>& targets);
-    void build_assembly_generators(const std::string& assembly_id, const string_view& operation_expression, const std::set<string_view>& targets);
 
     /// Map residues position, indexed by residue id and chainid. We use an indirection to keep the residue order (and don't sort them with the map id) 
     std::map<std::pair<std::string, int64_t>, size_t> map_residues_indexes;
@@ -136,9 +138,8 @@ private:
     /// The PDB icode, if any
     std::string pdb_idcode_;
 
-    void read_item(const mmCIFCategoryHeader& header, std::vector<string_view>& property);
-    void read_line_and_split(std::vector<string_view> & split) ;
-
+    // Currently read_multi_line return a std::string because multi-line in cif contains character at each line start.
+    // It can be good to find a way to work only with string_view.
     std::string read_multi_line();
 };
 
