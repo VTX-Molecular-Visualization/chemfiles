@@ -591,10 +591,13 @@ void mmCIFFormat::apply_symmetry(Frame& frame, const std::string & assembly_id)
     using bond_w_order = std::pair<Bond, Bond::BondOrder>;
     std::vector<bond_w_order> bonds_to_add;
 
+    size_t assembly_generator_count = 0;
     for (auto assemblyGenerator : assembly_.assembly_generators )
     {
         if ( assemblyGenerator.assembly_id != assembly_id )
             continue;
+
+        assembly_generator_count++;
 
         // Skip identity operation
         if ( assemblyGenerator.operations.size() == 1 )
@@ -626,10 +629,11 @@ void mmCIFFormat::apply_symmetry(Frame& frame, const std::string & assembly_id)
             }
 
             // Avoid using this chain in future symmetry operations
-            const std::string newChainID = std::string(chainID->as_string() + '\'');
+            const std::string newChainID = chainID->as_string() + "-" + std::to_string(assembly_generator_count);
             new_residue.set("chainid", newChainID);
-            //std::string newChainName = "Ass-" + assemblyGenerator.assembly_id;
-            //new_residue.set("chainname", newChainName);
+            // Rename chain with assembly ID
+            std::string newChainName = residue.get("chainname")->as_string() + "-" + std::to_string( assembly_generator_count);
+            new_residue.set("chainname", newChainName);
 
             for ( auto atom_id : residue )
             {
@@ -1052,7 +1056,7 @@ void mmCIFFormat::write(const Frame& frame) {
 
         const auto& atom = frame[i];
 
-        file_.print("{} {: <5} {: <2} {: <4} {} {: >3} {} {: >4} {:8.3f} {:8.3f} {:8.3f} {:#} {} {}\n",
+        file_.print("{} {: <5} {: <2} {: <4} {} {: >3} {} {: >4} {:8.3f} {:8.3f} {:8.3f} {:#} {} {: >4} {}\n",
                 pdbgroup, atoms_, atom.type(), atom.name(), ".", compid,
                 asymid, seq_id, positions[i][0], positions[i][1], positions[i][2],
                 atom.charge(), auth_asymid, seq_id, models_
