@@ -613,8 +613,9 @@ void mmCIFFormat::apply_symmetry(Frame& frame, const std::string & assembly_id)
         std::vector<Residue> residues_to_add;
         residues_to_add.reserve(original_residue_size);
 
-        for ( const auto& residue : frame.topology().residues() )
+        for ( size_t residue_index = 0 ; residue_index < original_residue_size ; ++residue_index)
         {
+            const auto& residue = frame.topology().residues()[residue_index];
             auto chainID = residue.get("chainid");
 
             if ( !chainID || assemblyGenerator.targets.find(chainID->as_string()) == assemblyGenerator.targets.end() ) { 
