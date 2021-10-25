@@ -3,29 +3,29 @@
 #define VMDCON_ERROR     3
 
 extern "C" {
-    #include <vmdplugin.h>
     #include <molfile_plugin.h>
+    #include <vmdplugin.h>
 }
 
+#include <array>
 #include <cassert>
 #include <cstdint>
-#include <array>
 #include <string>
-#include <vector>
 #include <unordered_map>
+#include <vector>
 
+#include "chemfiles/error_fmt.hpp"
+#include "chemfiles/external/optional.hpp"
+#include "chemfiles/external/span.hpp"
 #include "chemfiles/types.hpp"
 #include "chemfiles/warnings.hpp"
-#include "chemfiles/error_fmt.hpp"
-#include "chemfiles/external/span.hpp"
-#include "chemfiles/external/optional.hpp"
 
-#include "chemfiles/File.hpp"
 #include "chemfiles/Atom.hpp"
+#include "chemfiles/File.hpp"
+#include "chemfiles/FormatMetadata.hpp"
 #include "chemfiles/Frame.hpp"
 #include "chemfiles/Residue.hpp"
 #include "chemfiles/Topology.hpp"
-#include "chemfiles/FormatMetadata.hpp"
 
 #include "chemfiles/formats/Molfile.hpp"
 
@@ -182,14 +182,13 @@ template <MolfileFormat F> void Molfile<F>::read(Frame& frame) {
         frame.set_topology(*topology_);
     }
     molfile_to_frame(timestep, frame);
-
-    frames_.emplace_back(frame.clone());
 }
 
 template <MolfileFormat F> void Molfile<F>::read_step(size_t step, Frame& frame) {
     while (step >= frames_.size()) {
         Frame new_frame;
         this->read(new_frame);
+        frames_.emplace_back(frame.clone());
     }
     frame = frames_.at(step).clone();
 }
