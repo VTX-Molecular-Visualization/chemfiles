@@ -86,11 +86,7 @@ void CMLFormat::init_() {
         return;
     }
 
-    std::string content;
-    while (!file_.eof()) {
-        auto line = file_.readline();
-        content.append(line.data(), line.size());
-    }
+    auto content = file_.readall();
 
     auto result = document_.load_string(content.c_str());
     if (!result) {
@@ -596,10 +592,10 @@ void CMLFormat::write(const Frame& frame) {
         }
 
         auto& atom_properties = atom.properties();
-        if (!atom_properties.size()) {
+        if (!atom_properties) {
             continue;
         }
-        for (auto& prop : atom_properties) {
+        for (auto& prop : *atom_properties) {
             // special properties which are already written as attributes
             // charge and isotope are not stored as properties, so no need to check
             if (prop.first == "hydrogen_count" || prop.first == "title") {

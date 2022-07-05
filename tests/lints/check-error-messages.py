@@ -19,6 +19,7 @@ ALLOWED = [
     "found deprecated configuration file at '{}', please rename it to .chemfiles.toml",
     "could not find _atom_site.type_symbol in '{}'",
     "could not find _atom_site.Cartn_x in '{}'",
+    "unable to guess unit cell convention. The cell is stored as [{} {} {} {} {} {}]",
 ]
 
 
@@ -31,6 +32,10 @@ def error(message):
 def extract_messages(lines, i, has_context):
     if has_context:
         context_start = lines[i].find('"')
+        if context_start == -1:
+            # look at the next line
+            i = i + 1
+            context_start = lines[i].find('"')
         context_stop = lines[i].find('"', context_start + 1)
     else:
         context_stop = -1

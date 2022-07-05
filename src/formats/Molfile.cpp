@@ -49,13 +49,49 @@ using namespace chemfiles;
     }
 
 namespace chemfiles {
-    PLUGINS_DATA(DCD,               dcdplugin,          dcd,            false);
-    PLUGINS_DATA(TRJ,               gromacsplugin,      trj,            false);
-    PLUGINS_DATA(MOLDEN,            moldenplugin,       molden,         false);
+    PLUGINS_DATA(TRJ,     gromacsplugin, trj,    false);
+    PLUGINS_DATA(PSF,     psfplugin,     psf,    false);
+    PLUGINS_DATA(MOLDEN,  moldenplugin,  molden, false);
 }
 
 #undef PLUGINS_FUNCTIONS
 /******************************************************************************/
+
+/// data identifying a residue in molfile plugins
+struct residue_info_t {
+    int id;
+    std::string name;
+    std::string segid;
+    std::string chain;
+
+    bool operator==(const residue_info_t& other) const {
+        return (
+            this->id == other.id &&
+            this->name == other.name &&
+            this->segid == other.segid &&
+            this->chain == other.chain
+        );
+    }
+};
+
+inline void hash_combine(std::size_t&) { }
+
+template <typename T, typename... Tail>
+inline void hash_combine(std::size_t& seed, const T& v, Tail... tail) {
+    std::hash<T> hasher;
+    seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+    hash_combine(seed, tail...);
+}
+
+namespace std {
+    template<> struct hash<residue_info_t> {
+        std::size_t operator()(const residue_info_t &info) const {
+            std::size_t result = 0;
+            hash_combine(result, info.id, info.name, info.segid, info.chain);
+            return result;
+        }
+    };
+}
 
 template <MolfileFormat F> static int register_plugin(void* user_data, vmdplugin_t* vmd_plugin) {
     auto user_plugin = static_cast<molfile_plugin_t**>(user_data);
@@ -114,8 +150,11 @@ Molfile<F>::Molfile(std::string path, File::Mode mode, File::Compression compres
 
     // Check that needed functions are here
     if (plugin_handle_->open_file_read == nullptr ||
-        (plugin_handle_->read_next_timestep == nullptr && plugin_handle_->read_timestep == nullptr ) ||
-        (plugin_handle_->close_file_read == nullptr )) {
+        (
+            plugin_handle_->read_next_timestep == nullptr &&
+            plugin_handle_->read_timestep == nullptr &&
+            plugin_handle_->read_structure == nullptr
+        ) || plugin_handle_->close_file_read == nullptr ) {
         throw format_error(
             "the {} plugin does not have read capacities", plugin_data_.format()
         );
@@ -150,10 +189,13 @@ template <MolfileFormat F> int Molfile<F>::read_next_timestep(molfile_timestep_t
         return plugin_handle_->read_timestep(
             data_, natoms_, timestep, nullptr, nullptr
         );
+    } else if (plugin_handle_->read_structure != nullptr) {
+        // topology only format, nothing to do
+        return MOLFILE_SUCCESS;
     } else {
         throw format_error(
-            "both read_next_timestep and read_timestep are missing in this "
-            "plugin. This is a bug"
+            "read_next_timestep, read_timestep and read_structure are missing "
+            "in this plugin. This is a bug"
         );
     }
 }
@@ -269,7 +311,7 @@ template <MolfileFormat F> void Molfile<F>::read_topology() {
 
     topology_ = Topology();
 
-    auto residues = std::unordered_map<int64_t, Residue>();
+    auto residues = std::unordered_map<residue_info_t, Residue>();
     size_t atom_id = 0;
     for (auto& molfile_atom : atoms) {
         Atom atom(molfile_atom.name, molfile_atom.type);
@@ -285,10 +327,23 @@ template <MolfileFormat F> void Molfile<F>::read_topology() {
         if (molfile_atom.resname != std::string("")) {
             auto resid = static_cast<int64_t>(molfile_atom.resid);
             auto residue = Residue(molfile_atom.resname, resid);
-            auto inserted = residues.insert({resid, std::move(residue)});
+            residue.set("segname", molfile_atom.segid);
+            residue.set("chainname", molfile_atom.chain);
+            residue.set("chainid", molfile_atom.chain);
+            auto info = residue_info_t {
+                molfile_atom.resid,
+                molfile_atom.resname,
+                molfile_atom.segid,
+                molfile_atom.chain,
+            };
+            auto inserted = residues.insert({std::move(info), std::move(residue)});
             inserted.first->second.add_atom(atom_id);
         }
         atom_id++;
+    }
+
+    for (auto residue: residues) {
+        topology_->add_residue(std::move(residue.second));
     }
 
     if (plugin_handle_->read_bonds == nullptr) {
@@ -321,29 +376,9 @@ template <MolfileFormat F> void Molfile<F>::read_topology() {
 }
 
 // Instantiate all the templates
-template class chemfiles::Molfile<DCD>;
 template class chemfiles::Molfile<TRJ>;
+template class chemfiles::Molfile<PSF>;
 template class chemfiles::Molfile<MOLDEN>;
-
-template<> const FormatMetadata& chemfiles::format_metadata<Molfile<DCD>>() {
-    static FormatMetadata metadata;
-    metadata.name = "DCD";
-    metadata.extension = ".dcd";
-    metadata.description = "DCD binary format";
-    metadata.reference = "http://www.ks.uiuc.edu/Research/vmd/plugins/molfile/dcdplugin.html";
-
-    metadata.read = true;
-    metadata.write = false;
-    metadata.memory = false;
-
-    metadata.positions = true;
-    metadata.velocities = false;
-    metadata.unit_cell = true;
-    metadata.atoms = false;
-    metadata.bonds = false;
-    metadata.residues = false;
-    return metadata;
-}
 
 template<> const FormatMetadata& chemfiles::format_metadata<Molfile<TRJ>>() {
     static FormatMetadata metadata;
@@ -361,6 +396,28 @@ template<> const FormatMetadata& chemfiles::format_metadata<Molfile<TRJ>>() {
     metadata.unit_cell = false;
     metadata.atoms = false;
     metadata.bonds = false;
+    metadata.residues = false;
+    return metadata;
+}
+
+template<> const FormatMetadata& chemfiles::format_metadata<Molfile<PSF>>() {
+    static FormatMetadata metadata;
+    metadata.name = "PSF";
+    metadata.extension = ".psf";
+    metadata.description = "Protein Structure File text format";
+    metadata.reference = "https://www.ks.uiuc.edu/Training/Tutorials/namd/namd-tutorial-unix-html/node23.html";
+
+    metadata.read = true;
+    metadata.write = false;
+    metadata.memory = false;
+
+    metadata.positions = false;
+    metadata.velocities = false;
+    metadata.unit_cell = false;
+    metadata.atoms = true;
+    metadata.bonds = true;
+    // FIXME: the molfile plugin does not read residue information, we should
+    // add it when re-implementing a PSF reader.
     metadata.residues = false;
     return metadata;
 }

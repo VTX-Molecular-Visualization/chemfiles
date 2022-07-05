@@ -4,7 +4,6 @@
 #include "catch.hpp"
 #include "chemfiles.hpp"
 #include "helpers.hpp"
-#include <fstream>
 using namespace chemfiles;
 
 // {wrapped, scaled_wrapped, unwrapped, scaled_unwrapped}.lammpstrj
@@ -286,9 +285,9 @@ TEST_CASE("Write files in LAMMPS Atom format") {
                                       "ITEM: NUMBER OF ATOMS\n"
                                       "2\n"
                                       "ITEM: BOX BOUNDS pp pp pp\n"
-                                      "0.0000000000000000e+00 0.0000000000000000e+00\n"
-                                      "0.0000000000000000e+00 0.0000000000000000e+00\n"
-                                      "0.0000000000000000e+00 0.0000000000000000e+00\n"
+                                      "0.000000000000e+00 0.000000000000e+00\n"
+                                      "0.000000000000e+00 0.000000000000e+00\n"
+                                      "0.000000000000e+00 0.000000000000e+00\n"
                                       "ITEM: ATOMS id xu yu zu type element mass q\n"
                                       "1 1 2 3 1 A 0 0\n"
                                       "2 1 2 3 2 B 10.81 0\n";
@@ -310,9 +309,7 @@ TEST_CASE("Write files in LAMMPS Atom format") {
         CHECK(frame.cell().shape() == UnitCell::INFINITE);
         check_traj.close();
 
-        std::ifstream checking(tmpfile);
-        std::string content((std::istreambuf_iterator<char>(checking)),
-                            std::istreambuf_iterator<char>());
+        auto content = read_text_file(tmpfile);
         CHECK(content == EXPECTED_CONTENT);
     }
 
@@ -326,9 +323,9 @@ TEST_CASE("Write files in LAMMPS Atom format") {
             "ITEM: NUMBER OF ATOMS\n"
             "4\n"
             "ITEM: BOX BOUNDS pp pp pp\n"
-            "0.0000000000000000e+00 2.2000000000000000e+01\n"
-            "0.0000000000000000e+00 2.2000000000000000e+01\n"
-            "0.0000000000000000e+00 2.2000000000000000e+01\n"
+            "0.000000000000e+00 2.200000000000e+01\n"
+            "0.000000000000e+00 2.200000000000e+01\n"
+            "0.000000000000e+00 2.200000000000e+01\n"
             "ITEM: ATOMS id xu yu zu type element mass q\n"
             "1 1 2 3 1 A 0 0\n"
             "2 1 2 3 2 B 10.81 0\n"
@@ -343,9 +340,9 @@ TEST_CASE("Write files in LAMMPS Atom format") {
             "ITEM: NUMBER OF ATOMS\n"
             "7\n"
             "ITEM: BOX BOUNDS xy xz yz pp pp pp\n"
-            "0.0000000000000000e+00 2.2000000000000000e+01 -1.0999999999999995e+01\n"
-            "0.0000000000000000e+00 1.9052558883257653e+01 -2.1999999999999989e+01\n"
-            "0.0000000000000000e+00 3.0209918110637730e+01 2.3224143638648190e+01\n"
+            "0.000000000000e+00 2.200000000000e+01 -1.100000000000e+01\n"
+            "0.000000000000e+00 1.905255888326e+01 -2.200000000000e+01\n"
+            "0.000000000000e+00 3.020991811064e+01 2.322414363865e+01\n"
             "ITEM: ATOMS id xu yu zu type element mass q vx vy vz\n"
             "1 1 2 3 1 A 0 -1 0 0 0\n"
             "2 1 2 3 2 B 10.81 2.5 0 0 0\n"
@@ -396,9 +393,7 @@ TEST_CASE("Write files in LAMMPS Atom format") {
         CHECK(approx_eq(frame.cell().angles(), Vector3D(45.0, 120.0, 120.0), 1e-2));
         check_traj.close();
 
-        std::ifstream checking(tmpfile);
-        std::string content((std::istreambuf_iterator<char>(checking)),
-                            std::istreambuf_iterator<char>());
+        auto content = read_text_file(tmpfile);
         CHECK(content == EXPECTED_CONTENT);
     }
 }

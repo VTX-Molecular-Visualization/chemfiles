@@ -1,7 +1,5 @@
 // Chemfiles, a modern library for chemistry file reading and writing
 // Copyright (C) Guillaume Fraux and contributors -- BSD license
-
-#include <fstream>
 #include <iostream>
 
 #include "catch.hpp"
@@ -85,7 +83,7 @@ TEST_CASE("Read files in XYZ format") {
 
         // Reading the unit cell
         auto expected = UnitCell(
-            {8.43116035, 14.50510613, 15.60911468}, 
+            {8.43116035, 14.50510613, 15.60911468},
             {73.31699212, 85.70200582, 89.37501529}
         );
         CHECK(approx_eq(frame.cell().matrix(), expected.matrix(), 1e-6));
@@ -223,13 +221,13 @@ TEST_CASE("Errors in XYZ format") {
 
 TEST_CASE("Write files in XYZ format") {
     auto tmpfile = NamedTempPath(".xyz");
-    const auto expected_content =
+    const auto EXPECTED_CONTENT =
 R"(4
-Properties=species:S:1:pos:R:3 name="Test"
-A 1 2 3
-B 1 2 3
-C 1 2 3
-D 1 2 3
+Properties=species:S:1:pos:R:3:bool:L:1:double:R:1:string:S:1:vector:R:3 name="Test"
+A 1 2 3 T 10 atom_0 10 20 30
+B 1 2 3 F 11 atom_1 11 21 31
+C 1 2 3 T 12 atom_2 12 22 32
+D 1 2 3 T 13 atom_2 13 23 33
 6
 Properties=species:S:1:pos:R:3 Lattice="12 0 0 0 13 0 0 0 14" direction="1 0 2" is_open=F name="Test" 'quotes"'=T "quotes'"=T speed=33.4 "with space"=T
 A 1 2 3
@@ -246,6 +244,39 @@ F 4 5 6
     frame.add_atom(Atom("B"), {1, 2, 3});
     frame.add_atom(Atom("C"), {1, 2, 3});
     frame.add_atom(Atom("D"), {1, 2, 3});
+
+    // atomic properties
+    frame[0].set("string", "atom_0");
+    frame[1].set("string", "atom_1");
+    frame[2].set("string", "atom_2");
+    frame[3].set("string", "atom_2");
+
+    frame[0].set("bool", true);
+    frame[1].set("bool", false);
+    frame[2].set("bool", true);
+    frame[3].set("bool", true);
+
+    frame[0].set("double", 10);
+    frame[1].set("double", 11);
+    frame[2].set("double", 12);
+    frame[3].set("double", 13);
+
+    frame[0].set("vector", Vector3D{10, 20, 30});
+    frame[1].set("vector", Vector3D{11, 21, 31});
+    frame[2].set("vector", Vector3D{12, 22, 32});
+    frame[3].set("vector", Vector3D{13, 23, 33});
+
+    // not saved, bad property name
+    frame[0].set("value with spaces", 0);
+    frame[1].set("value with spaces", 0);
+    frame[2].set("value with spaces", 0);
+    frame[3].set("value with spaces", 0);
+
+    // not saved, different types
+    frame[0].set("value", 0);
+    frame[1].set("value", "0");
+    frame[2].set("value", false);
+    frame[3].set("value", 0);
 
     auto file = Trajectory(tmpfile, 'w');
     file.write(frame);
@@ -267,17 +298,13 @@ F 4 5 6
     file.write(frame);
     file.close();
 
-    std::ifstream checking(tmpfile);
-    std::string content((std::istreambuf_iterator<char>(checking)),
-                         std::istreambuf_iterator<char>());
-    CHECK(content == expected_content);
+    auto content = read_text_file(tmpfile);
+    CHECK(content == EXPECTED_CONTENT);
 }
 
 TEST_CASE("Read and write files in memory") {
     SECTION("Reading from memory") {
-        std::ifstream checking("data/xyz/topology.xyz");
-        std::vector<char> content((std::istreambuf_iterator<char>(checking)),
-            std::istreambuf_iterator<char>());
+        auto content = read_text_file("data/xyz/topology.xyz");
 
         auto file = Trajectory::memory_reader(content.data(), content.size(), "XYZ");
         CHECK(file.nsteps() == 1);
@@ -325,8 +352,7 @@ F 4 5 6
 }
 
 TEST_CASE("Round-trip read/write") {
-    auto tmpfile = NamedTempPath(".xyz");
-    auto content =
+    std::string EXPECTED =
 R"(3
 Properties=species:S:1:pos:R:3
 O 0.417 8.303 11.737
@@ -334,15 +360,32 @@ H 1.32 8.48 12.003
 H 0.332 8.726 10.882
 )";
 
-    std::ofstream create(tmpfile);
-    create << content;
-    create.close();
+    auto frame = Trajectory::memory_reader(EXPECTED.data(), EXPECTED.size(), "XYZ").read();
 
-    auto frame = Trajectory(tmpfile).read();
-    Trajectory(tmpfile, 'w').write(frame);
+    auto writer = Trajectory::memory_writer("XYZ");
+    writer.write(frame);
 
-    std::ifstream checking(tmpfile);
-    std::string actual((std::istreambuf_iterator<char>(checking)),
-                        std::istreambuf_iterator<char>());
-    CHECK(content == actual);
+    CHECK(writer.memory_buffer().value() == EXPECTED);
+}
+
+
+TEST_CASE("Triclinic cell with negative values (issue 449)") {
+    auto matrix = Matrix3D(
+        6.92395,  -3.22455, 0.0000,
+        0.00000,   5.45355, 0.0000,
+        0.100667, -3.32057, 7.2836
+    );
+    auto frame = Frame(UnitCell(matrix));
+    frame.resize(1);
+
+    auto writer = Trajectory::memory_writer("XYZ");
+    writer.write(frame);
+
+    std::string EXPECTED =
+R"(1
+Properties=species:S:1:pos:R:3 Lattice="6.92395 0 0.100667 -3.22455 5.45355 -3.32057 0 0 7.2836"
+X 0 0 0
+)";
+
+    CHECK(writer.memory_buffer().value() == EXPECTED);
 }

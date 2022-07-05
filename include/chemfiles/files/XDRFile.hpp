@@ -4,65 +4,51 @@
 #ifndef CHEMFILES_XDR_FILE_HPP
 #define CHEMFILES_XDR_FILE_HPP
 
-#include <cstdint>
 #include <string>
+#include <vector>
 
-#include "chemfiles/File.hpp"
-
-// IWYU pragma: no_include <xdrfile.h>
-struct XDRFILE;  // IWYU pragma: keep
+#include "chemfiles/files/BinaryFile.hpp"
 
 namespace chemfiles {
 
-/// Simple RAII capsule for `XDRFILE*`, handling the creation and
-/// destruction of the file as needed.
-/// Reads the file header and stores the offsets for individual frames.
-class XDRFile final : public File {
-public:
-    /// Possible variants of the XDR file
-    enum Variants {
-        /// XTC trajectory
-        XTC,
-        /// TRR trajectory
-        TRR,
-    };
+/// Partial implementation of XDR according to RFC 4506
+/// (see: https://datatracker.ietf.org/doc/html/rfc4506)
+/// Including additional helper routines for GROMACS
+class XDRFile final : public BigEndianFile {
+  public:
+    XDRFile(std::string path, File::Mode mode);
+    XDRFile(XDRFile&& other) noexcept = default;
+    XDRFile& operator=(XDRFile&& other) = default;
+    ~XDRFile() noexcept override = default;
 
-    XDRFile(Variants variant, std::string path, File::Mode mode);
-    ~XDRFile() override;
+    using BinaryFile::read_f32;
+    using BinaryFile::read_f64;
+    using BinaryFile::write_f32;
 
-    XDRFile(XDRFile&& other) noexcept : File("", File::READ, File::DEFAULT) {
-        *this = std::move(other);
-    }
-    XDRFile& operator=(XDRFile&& other) noexcept;
+    /// Read a non-compliant GROMACS string
+    /// A GROMACS string stores the length of the string including the NULL
+    /// terminator as int32 before the XDR compliant string data without the
+    /// terminator. An XDR string has the same representation as opaque data.
+    std::string read_gmx_string();
+    /// Write a non-compliant GROMACS string
+    void write_gmx_string(const std::string& value);
 
-    XDRFile(XDRFile const&) = delete;
-    XDRFile& operator=(XDRFile const&) = delete;
+    /// Read compressed GROMACS floats and returns the precision
+    float read_gmx_compressed_floats(std::vector<float>& data);
+    /// Write compressed GROMACS floats with a given precision
+    void write_gmx_compressed_floats(const std::vector<float>& data, float precision);
 
-    /// get the number of frames/steps in the file, as indicated in the file header
-    unsigned long nframes() const;
-    /// get the offset corresponding to a specific frame/step
-    int64_t offset(size_t step) const;
-    /// get the number of atoms, as indicated in the file header
-    int natoms() const;
-    /// set the number of atoms
-    void set_natoms(int natoms);
+  private:
+    /// Read XDR variable-length opaque data
+    void read_opaque(std::vector<char>& data);
+    /// Write XDR variable-length opaque data
+    void write_opaque(const char* data, uint32_t count);
 
-    operator XDRFILE*() { return handle_; }
-
-private:
-    /// underlying pointer to the xdr file
-    XDRFILE* handle_;
-    /// The number of frames in the trajectory
-    unsigned long nframes_ = 0;
-    /// Offsets within file for fast indexing
-    int64_t* offsets_ = nullptr;
-    /// The number of atoms in the trajectory
-    int natoms_ = 0;
+    /// Cache allocation for compressed data (XTC)
+    std::vector<char> compressed_data_;
+    /// Cache allocation for intermediate buffer (XTC)
+    std::vector<int32_t> intbuf_;
 };
-
-/// Check a return code from a xdrlib function, and throw a `FileError` if the
-/// status is not exdrOK.
-void check_xdr_error(int status, const std::string& function);
 
 } // namespace chemfiles
 

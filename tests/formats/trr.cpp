@@ -6,49 +6,86 @@
 #include "helpers.hpp"
 using namespace chemfiles;
 
+static void check_ubiquitin(Trajectory& file) {
+    CHECK(file.nsteps() == 2);
+    auto frame = file.read_step(0);
+
+    CHECK(frame.step() == 0);
+    CHECK(approx_eq(frame.get("time")->as_double(), 0));
+    CHECK(frame.get("has_positions")->as_bool());
+    CHECK(frame.size() == 20455);
+    CHECK(frame.velocities());
+
+    auto positions = frame.positions();
+    CHECK(approx_eq(positions[0], Vector3D(24.8277, 24.6620, 18.8104), 1e-4));
+    CHECK(approx_eq(positions[11], Vector3D(23.7713, 24.5589, 21.4702), 1e-4));
+
+    auto velocities = *frame.velocities();
+    CHECK(approx_eq(velocities[100], Vector3D(-2.8750, 2.8159, 1.2047), 1e-4));
+    CHECK(approx_eq(velocities[111], Vector3D(-3.0103, 3.3177, -0.8265), 1e-4));
+
+    auto cell = frame.cell();
+    CHECK(cell.shape() == UnitCell::ORTHORHOMBIC);
+    CHECK(approx_eq(cell.lengths(), {55.6800, 58.8700, 62.5700}, 1e-4));
+
+    frame = file.read_step(1);
+
+    CHECK(frame.step() == 25000);
+    CHECK(approx_eq(frame.get("time")->as_double(), 50));
+    CHECK(frame.get("has_positions")->as_bool());
+    CHECK(frame.size() == 20455);
+    CHECK(frame.velocities());
+
+    positions = frame.positions();
+    CHECK(approx_eq(positions[0], Vector3D(24.8625, 25.0285, 18.5973), 1e-4));
+    CHECK(approx_eq(positions[11], Vector3D(23.7971, 24.2192, 21.1569), 1e-4));
+
+    velocities = *frame.velocities();
+    CHECK(approx_eq(velocities[100], Vector3D(-5.3413, -1.2646, 1.0216), 1e-4));
+    CHECK(approx_eq(velocities[111], Vector3D(-1.7052, 1.0418, 5.3836), 1e-4));
+
+    cell = frame.cell();
+    CHECK(cell.shape() == UnitCell::ORTHORHOMBIC);
+    CHECK(approx_eq(cell.lengths(), {55.6800, 58.8700, 62.5700}, 1e-4));
+}
+
+static void check_different_cell_shapes(Trajectory& file) {
+    CHECK(file.nsteps() == 3);
+
+    auto frame = file.read();
+    CHECK(frame.size() == 10);
+    auto cell = frame.cell();
+    CHECK(cell.shape() == UnitCell::ORTHORHOMBIC);
+    CHECK(approx_eq(cell.lengths(), {11.23, 22.34, 33.45}, 1e-4));
+    CHECK(approx_eq(cell.angles(), {90.0, 90.0, 90.0}, 1e-4));
+    CHECK(approx_eq(frame.positions()[9], Vector3D(9.0000, 90.0000, 900.0000), 1e-4));
+
+    frame = file.read();
+    CHECK(frame.size() == 10);
+    cell = frame.cell();
+    CHECK(cell.shape() == UnitCell::TRICLINIC);
+    CHECK(approx_eq(cell.lengths(), {11.23, 22.34, 33.45}, 1e-4));
+    CHECK(approx_eq(cell.angles(), {33.45, 44.56, 55.67}, 1e-4));
+    CHECK(approx_eq(frame.positions()[9], Vector3D(9.0000, 90.0000, 900.0000), 1e-4));
+
+    frame = file.read();
+    CHECK(frame.size() == 10);
+    cell = frame.cell();
+    CHECK(cell.shape() == UnitCell::INFINITE);
+    CHECK(approx_eq(cell.lengths(), {0.0, 0.0, 0.0}, 1e-4));
+    CHECK(approx_eq(cell.angles(), {90.0, 90.0, 90.0}, 1e-4));
+    CHECK(approx_eq(frame.positions()[9], Vector3D(9.0000, 90.0000, 900.0000), 1e-4));
+}
+
 TEST_CASE("Read files in TRR format") {
     SECTION("Read trajectory: Ubiquitin") {
         auto file = Trajectory("data/trr/ubiquitin.trr");
-        CHECK(file.nsteps() == 2);
-        auto frame = file.read();
+        check_ubiquitin(file);
+    }
 
-        CHECK(frame.step() == 0);
-        CHECK(approx_eq(frame.get("time")->as_double(), 0));
-        CHECK(frame.get("has_positions")->as_bool());
-        CHECK(frame.size() == 20455);
-        CHECK(frame.velocities());
-
-        auto positions = frame.positions();
-        CHECK(approx_eq(positions[0], Vector3D(24.8277, 24.6620, 18.8104), 1e-4));
-        CHECK(approx_eq(positions[11], Vector3D(23.7713, 24.5589, 21.4702), 1e-4));
-
-        auto velocities = *frame.velocities();
-        CHECK(approx_eq(velocities[100], Vector3D(-2.8750, 2.8159, 1.2047), 1e-4));
-        CHECK(approx_eq(velocities[111], Vector3D(-3.0103, 3.3177, -0.8265), 1e-4));
-
-        auto cell = frame.cell();
-        CHECK(cell.shape() == UnitCell::ORTHORHOMBIC);
-        CHECK(approx_eq(cell.lengths(), {55.6800, 58.8700, 62.5700}, 1e-4));
-
-        frame = file.read();
-
-        CHECK(frame.step() == 25000);
-        CHECK(approx_eq(frame.get("time")->as_double(), 50));
-        CHECK(frame.get("has_positions")->as_bool());
-        CHECK(frame.size() == 20455);
-        CHECK(frame.velocities());
-
-        positions = frame.positions();
-        CHECK(approx_eq(positions[0], Vector3D(24.8625, 25.0285, 18.5973), 1e-4));
-        CHECK(approx_eq(positions[11], Vector3D(23.7971, 24.2192, 21.1569), 1e-4));
-
-        velocities = *frame.velocities();
-        CHECK(approx_eq(velocities[100], Vector3D(-5.3413, -1.2646, 1.0216), 1e-4));
-        CHECK(approx_eq(velocities[111], Vector3D(-1.7052, 1.0418, 5.3836), 1e-4));
-
-        cell = frame.cell();
-        CHECK(cell.shape() == UnitCell::ORTHORHOMBIC);
-        CHECK(approx_eq(cell.lengths(), {55.6800, 58.8700, 62.5700}, 1e-4));
+    SECTION("Read double precision trajectory: Ubiquitin") {
+        auto file = Trajectory("data/trr/ubiquitin_d.trr");
+        check_ubiquitin(file);
     }
 
     SECTION("Read trajectory: Water") {
@@ -160,6 +197,16 @@ TEST_CASE("Read files in TRR format") {
         cell = frame.cell();
         CHECK(cell.shape() == UnitCell::ORTHORHOMBIC);
         CHECK(approx_eq(cell.lengths(), {73.3925, 73.3925, 73.3925}, 1e-4));
+    }
+
+    SECTION("Read different cell shapes") {
+        auto file = Trajectory("data/trr/cell_shapes.trr");
+        check_different_cell_shapes(file);
+    }
+
+    SECTION("Read different cell shapes in double precision") {
+        auto file = Trajectory("data/trr/cell_shapes_d.trr");
+        check_different_cell_shapes(file);
     }
 }
 

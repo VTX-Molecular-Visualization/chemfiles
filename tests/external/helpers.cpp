@@ -8,6 +8,7 @@
 
 #include <cstdlib>
 #include <cstdio>
+#include <fstream>
 #include <stdexcept>
 #include <new>
 
@@ -16,6 +17,11 @@
 #include <windows.h>
 #else
 #include <unistd.h>
+#endif
+
+#ifdef CHEMFILES_WINDOWS
+    #define popen _popen
+    #define pclose _pclose
 #endif
 
 #ifdef __EMSCRIPTEN__
@@ -66,6 +72,10 @@ bool approx_eq(double a, double b, double tolerance) {
     return fabs(a - b) < tolerance;
 }
 
+bool approx_eq(float a, float b, float tolerance) {
+    return fabs(a - b) < tolerance;
+}
+
 bool is_valgrind_and_ci() {
     auto CI = std::getenv("CI");
     auto valgrind = std::getenv("CHFL_TESTS_USE_VALGRIND");
@@ -112,6 +122,26 @@ void copy_file(std::string src, std::string dst) {
     output << input.rdbuf();
 }
 
+std::vector<uint8_t> read_binary_file(std::string path) {
+    std::ifstream file(path, std::ios::binary);
+    file.seekg(0, std::ios::end);
+    auto size = static_cast<size_t>(file.tellg());
+    file.seekg(0, std::ios::beg);
+
+    auto content = std::vector<uint8_t>(size);
+    file.read(reinterpret_cast<char*>(content.data()), static_cast<std::streamsize>(size));
+
+    return content;
+}
+
+std::string read_text_file(std::string path) {
+    std::ifstream file(path, std::ios::binary);
+    return {
+        std::istreambuf_iterator<char>(file),
+        std::istreambuf_iterator<char>()
+    };
+}
+
 static bool FAIL_NEXT_ALLOCATION = false;
 
 void fail_next_allocation() {
@@ -148,4 +178,25 @@ void* operator new[](size_t count) {
 
 void operator delete[](void* ptr) noexcept {
     operator delete(ptr);
+}
+
+std::string run_process(std::string command) {
+    auto process = popen(command.c_str(), "r");
+    if (process == nullptr) {
+        throw std::runtime_error("could not start command '" + command + "'");
+    }
+
+    std::array<char, 128> buffer;
+    std::string result;
+
+    while (std::fgets(buffer.data(), 128, process) != nullptr) {
+        result += buffer.data();
+    }
+
+    auto status = pclose(process);
+    if (status != 0) {
+        throw std::runtime_error("running '" + command + "' returned " + std::to_string(status));
+    }
+
+    return result;
 }

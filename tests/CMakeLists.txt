@@ -1,5 +1,5 @@
 # Update this value if you need to update the data file set
-set(TESTS_DATA_GIT "235991a21b35bfd156d35a7084c75ddf0a637869")
+set(TESTS_DATA_GIT "66aba97578dc8f0b8e3fbfd005f9e07daa95476c")
 
 if(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/data/${TESTS_DATA_GIT}")
     message(STATUS "Downloading test data files")
@@ -7,7 +7,7 @@ if(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/data/${TESTS_DATA_GIT}")
         "https://github.com/chemfiles/tests-data/archive/${TESTS_DATA_GIT}.tar.gz"
         "${CMAKE_CURRENT_BINARY_DIR}/${TESTS_DATA_GIT}.tar.gz"
         SHOW_PROGRESS
-        EXPECTED_HASH SHA1=d91217e19726b8de3eb0cef5f937e2f69b22f404
+        EXPECTED_HASH SHA1=ddc71439afd0c36d3c698e47c35861db6117976b
     )
 
     message(STATUS "Unpacking test data files")
@@ -126,8 +126,10 @@ foreach(test_file IN LISTS capi_test_files)
     chfl_capi_test(${test_file})
 endforeach()
 
+# Pass extra data to some tests
 file(RELATIVE_PATH VERSION_FILE_PATH ${CMAKE_CURRENT_BINARY_DIR} ${PROJECT_SOURCE_DIR}/VERSION)
 target_compile_definitions(c-misc PRIVATE "-DVERSION_FILE_PATH=\"${VERSION_FILE_PATH}\"")
+target_compile_definitions(netcdf3-file PRIVATE "-DCMAKE_COMMAND=\"${CMAKE_COMMAND}\"")
 
 function(chfl_doctest _name_ _file_)
     if(NOT ${CHFL_BUILD_DOCTESTS})
@@ -144,7 +146,7 @@ function(chfl_doctest _name_ _file_)
 
     add_executable(${_name_} ${_file_})
     target_link_libraries(${_name_} chemfiles)
-    target_link_libraries(${_name_} ${NETCDF_LIBRARIES} ${ZLIB_LIBRARIES} ${LIBLZMA_LIBRARY})
+    target_link_libraries(${_name_} ${ZLIB_LIBRARIES} ${LIBLZMA_LIBRARY})
     set_target_properties(${_name_} PROPERTIES LINKER_LANGUAGE CXX)
     set_target_properties(${_name_} PROPERTIES COMPILE_FLAGS "-UNDEBUG")
     target_include_directories(${_name_} SYSTEM PRIVATE ${EXTERNAL_INCLUDES})

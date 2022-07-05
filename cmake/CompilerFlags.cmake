@@ -56,13 +56,10 @@ if(${EMSCRIPTEN})
         message(FATAL_ERROR "emscripten ${EMSCRIPTEN_VERSION} is not supported, chemfiles requires version 2 or later")
     endif()
 
-    set(EMCC_FLAGS "")
-    set(EMCC_FLAGS "${EMCC_FLAGS} -s DISABLE_EXCEPTION_CATCHING=0")
-    set(EMCC_FLAGS "${EMCC_FLAGS} -s ERROR_ON_UNDEFINED_SYMBOLS=1")
-    set(EMCC_FLAGS "${EMCC_FLAGS} -s ALLOW_MEMORY_GROWTH=1")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s DISABLE_EXCEPTION_CATCHING=0")
 
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${EMCC_FLAGS}")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${EMCC_FLAGS}")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -s ERROR_ON_UNDEFINED_SYMBOLS=1")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -s ALLOW_MEMORY_GROWTH=1")
 
     find_program(NODE_JS_EXECUTABLE NAMES nodejs node)
     if(NODE_JS_EXECUTABLE)
@@ -221,6 +218,7 @@ else()
     # This warning trigger when compiling for 64-bit,
     # but the code is relevant for 32-bit
     add_warning_flag("-Wno-tautological-type-limit-compare")
+    add_warning_flag("-Wno-useless-cast")
     # Not everyone is as smart as clang for code reachability
     add_warning_flag("-Wno-covered-switch-default")
     add_warning_flag("-Wno-unreachable-code-break")

@@ -57,6 +57,10 @@ function(unpack_library _name_)
         # .git directories can get huge and increase the size of this repository
         message(FATAL_ERROR "${_name_} archive contains a .git directory, please remove it")
     endif()
+
+    # make sure cmake re-runs whenever the file changes
+    get_directory_property(_previous_list_ CMAKE_CONFIGURE_DEPENDS)
+    set_directory_properties(PROPERTIES CMAKE_CONFIGURE_DEPENDS "${_previous_list_};${_name_}.tar.gz")
 endfunction()
 
 function(external_library _name_)
@@ -153,30 +157,6 @@ list(APPEND EXTERNAL_INCLUDES ${CMAKE_CURRENT_BINARY_DIR}/pugixml/src)
 add_library(pugixml OBJECT ${CMAKE_CURRENT_BINARY_DIR}/pugixml/src/pugixml.cpp)
 
 # ==========
-# netcdf: https://github.com/chemfiles/netcdf-c
-# ==========
-if(${CHFL_SYSTEM_NETCDF})
-    find_package(NetCDF REQUIRED)
-    set(NETCDF_OBJECTS "" PARENT_SCOPE)
-else()
-    external_library(netcdf)
-
-    set(NETCDF_INCLUDES
-        ${CMAKE_CURRENT_BINARY_DIR}/netcdf/include
-        ${CMAKE_CURRENT_BINARY_DIR}/netcdf
-    )
-    set(NETCDF_OBJECTS $<TARGET_OBJECTS:netcdf> PARENT_SCOPE)
-    set(NETCDF_LIBRARIES "" PARENT_SCOPE)
-    if(${EMSCRIPTEN})
-        set(NETCDF_OBJECTS_TESTS "" PARENT_SCOPE)
-    else()
-        set(NETCDF_OBJECTS_TESTS ${NETCDF_OBJECTS} PARENT_SCOPE)
-    endif()
-endif()
-
-list(APPEND EXTERNAL_INCLUDES ${NETCDF_INCLUDES})
-
-# ==========
 # TNG io: https://github.com/chemfiles/tng
 # ==========
 external_library(tng)
@@ -196,7 +176,7 @@ mark_as_advanced(FORCE
 # VMD molfile: https://github.com/chemfiles/molfiles
 # ==========
 set(VMD_MOLFILE_PLUGINS
-    dcdplugin gromacsplugin lammpsplugin moldenplugin
+    gromacsplugin moldenplugin psfplugin
 )
 
 external_library(molfiles)
@@ -215,7 +195,7 @@ list(APPEND EXTERNAL_INCLUDES ${CMAKE_CURRENT_BINARY_DIR}/molfiles/include)
 # brixplugin ccp4plugin cifplugin corplugin crdplugin cubeplugin dsn6plugin
 # dtrplugin dxplugin edmplugin fs4plugin graspplugin grdplugin gridplugin
 # jsplugin maeffplugin mapplugin molemeshplugin offplugin pbeqplugin phiplugin
-# pltplugin pqrplugin psfplugin raster3dplugin rst7plugin situsplugin
+# pltplugin pqrplugin raster3dplugin rst7plugin situsplugin
 # spiderplugin stlplugin uhbdplugin vtfplugin xbgfplugin xsfplugin
 
 # ==========
@@ -245,12 +225,6 @@ list(APPEND EXTERNAL_INCLUDES ${CMAKE_CURRENT_BINARY_DIR}/molfiles/include)
 unpack_library(mmtf-cpp)
 list(APPEND EXTERNAL_INCLUDES ${CMAKE_CURRENT_BINARY_DIR}/mmtf-cpp/include )
 list(APPEND EXTERNAL_INCLUDES ${CMAKE_CURRENT_BINARY_DIR}/mmtf-cpp/msgpack-c/include )
-
-# ==========
-# xdrfile
-# ==========
-external_library(xdrfile)
-list(APPEND EXTERNAL_INCLUDES ${CMAKE_CURRENT_BINARY_DIR}/xdrfile/include)
 
 # ==========
 # gemmi

@@ -20,8 +20,15 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ### Changes in supported formats
 
 - Added read and write support for Amber Restart (.ncrst) files.
+- Added native read and write support for LAMMPS trajectory (.lammpstrj) files,
+  replacing the VMD molfile implementation.
+- Added read support for PSF files using VMD molfile plugin.
+- Amber NetCDF files are now read/written with a custom netcdf parser (#443)
+- TRR and XTC files are now read/written with a custom XDR files parser (#451)
+- DCD files are now read/written with a custom parser (#453)
 
-### Changes to the C API
+### Changes to the C++ API
+- Per-atom properties are optional, i.e. `Atom::properties` returns an optional property map.
 
 ## 0.10.0 (14 Feb 2021)
 

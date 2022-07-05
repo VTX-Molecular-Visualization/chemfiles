@@ -95,7 +95,7 @@ private:
     void init_();
     /// Underlying file representation
     TextFile file_;
-
+    
     ReaderMetaData reader_meta_data_;
     std::map<std::string, mmCIFCategoryHeader> category_map_;
 
@@ -118,12 +118,12 @@ private:
 
     void apply_symmetry(Frame& frame, const std::string & assembly_id);
 
-
-    /// Map residues position, indexed by residue id and chainid. We use an indirection to keep the residue order (and don't sort them with the map id) 
-    std::map<std::pair<std::string, int64_t>, size_t> map_residues_indexes;
-    /// Store residues in this vector.
+   	/// Map of STAR records to their index
+    std::map<std::string, size_t> atom_site_map_;
+    /// Vector with all the residues.
     std::vector<Residue> residues_;
-    
+    /// Map of residue indexes, indexed by residue id and chainid. We use an indirection to keep the residue order (and don't sort them with the map id).
+    std::map<std::pair<std::string, int64_t>, size_t> map_residues_indexes;
     /// Storing the positions of all the steps in the file, so that we can
     /// just `seekpos` them instead of reading the whole step.
     std::vector<uint64_t> steps_positions_;

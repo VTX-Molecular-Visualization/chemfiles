@@ -3,6 +3,7 @@
 
 #include <fstream>
 #include <thread>
+
 #include <catch.hpp>
 
 #include "helpers.hpp"
@@ -69,11 +70,7 @@ TEST_CASE("Associate a topology and a trajectory") {
         file.write(frame);
         file.close();
 
-        std::ifstream checking(tmpfile);
-        std::string content{
-            std::istreambuf_iterator<char>(checking),
-            std::istreambuf_iterator<char>()
-        };
+        auto content = read_text_file(tmpfile);
         CHECK(content == EXPECTED_CONTENT);
     }
 }
@@ -126,11 +123,7 @@ TEST_CASE("Associate an unit cell and a trajectory") {
             "ENDMDL\n"
             "END\n";
 
-            std::ifstream checking(tmpfile);
-            std::string content{
-                std::istreambuf_iterator<char>(checking),
-                std::istreambuf_iterator<char>()
-            };
+            auto content = read_text_file(tmpfile);
             CHECK(content == EXPECTED_CONTENT);
         }
 
@@ -154,11 +147,7 @@ TEST_CASE("Associate an unit cell and a trajectory") {
             file.write(frame);
             file.close();
 
-            std::ifstream checking(tmpfile);
-            std::string content{
-                std::istreambuf_iterator<char>(checking),
-                std::istreambuf_iterator<char>()
-            };
+            auto content = read_text_file(tmpfile);
             CHECK(content == EXPECTED_CONTENT);
         }
     }
@@ -272,12 +261,9 @@ TEST_CASE("reading a files from multiple threads") {
     read_from_multiple_threads("data/dcd/water.dcd", 297);
     read_from_multiple_threads("data/trr/1aki.trr", 38376);
     read_from_multiple_threads("data/xtc/ubiquitin.xtc", 20455);
+    read_from_multiple_threads("data/tng/1aki.tng", 38376);
 
-    // FIXME: these fail, probably because the underlying library maintains a
-    // pool of ressources without synchronization
-
-    // read_from_multiple_threads("data/tng/1aki.tng", 38376);
-    // read_from_multiple_threads("data/netcdf/water.nc", 297);
+    read_from_multiple_threads("data/netcdf/water.nc", 297);
 }
 
 #endif
