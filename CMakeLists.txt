@@ -227,6 +227,3 @@ configure_file(
     "${PROJECT_BINARY_DIR}/uninstall.cmake"
     @ONLY
 )
-add_custom_target(uninstall
-    COMMAND ${CMAKE_COMMAND} -P ${PROJECT_BINARY_DIR}/uninstall.cmake
-)
