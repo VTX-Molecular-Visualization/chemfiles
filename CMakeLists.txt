@@ -220,3 +220,10 @@ install(FILES "${PROJECT_BINARY_DIR}/chemfiles-config-version.cmake"
 
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/ DESTINATION ${INCLUDE_INSTALL_DIR})
 install(DIRECTORY ${PROJECT_BINARY_DIR}/include/ DESTINATION ${INCLUDE_INSTALL_DIR})
+
+# uninstall target
+configure_file(
+    "${PROJECT_SOURCE_DIR}/cmake/uninstall.in.cmake"
+    "${PROJECT_BINARY_DIR}/uninstall.cmake"
+    @ONLY
+)
