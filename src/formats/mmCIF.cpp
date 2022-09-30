@@ -1134,8 +1134,8 @@ void mmCIFFormat::build_assembly_generators(const std::string& assembly_id,
         std::string firstTarget_string = firstTarget_str.to_string();
         std::string secondTarget_string = secondTarget_str.to_string();
 
-        int firstTargetID = std::stoi(firstTarget_string);
-        int secondTargetID = std::stoi(secondTarget_string);
+        int firstTargetID = parse<int>(firstTarget_string);
+        int secondTargetID = parse<int>(secondTarget_string);
 
         for ( int i = firstTargetID; i <= secondTargetID; ++i )
         {
