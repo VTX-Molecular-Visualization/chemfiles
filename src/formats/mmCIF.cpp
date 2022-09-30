@@ -990,7 +990,7 @@ void mmCIFFormat::fill_assembly_operations()
 
         auto translation = Vector3D(vector_x_value, vector_y_value, vector_z_value);
 
-        assembly_.assembly_operations.emplace(id_value, AssemblyOperation(translation, rotation));
+        assembly_.assembly_operations.emplace(id_value.to_string(), AssemblyOperation(translation, rotation));
     }
 }
 
