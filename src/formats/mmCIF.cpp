@@ -1033,7 +1033,8 @@ void mmCIFFormat::write(const Frame& frame) {
 		file_.print( "_atom_site.Cartn_z\n" );
 		file_.print( "_atom_site.pdbx_formal_charge\n" );
 		file_.print( "_atom_site.auth_asym_id\n" );
-		file_.print( "_atom_site.auth_seq_id\n" );
+		// Not managed for the moment
+		// file_.print( "_atom_site.auth_seq_id\n" );
 		file_.print( "_atom_site.pdbx_PDB_model_num\n" );
 	}
 
@@ -1069,10 +1070,10 @@ void mmCIFFormat::write(const Frame& frame) {
 
 		const auto & atom = frame[ i ];
 
-		file_.print( "{} {: <5} {: <2} {: <4} {} {: >3} {} {: >4} {:8.3f} {:8.3f} {:8.3f} {:#} {} {: >4} {}\n",
+		file_.print( "{} {: <5} {: <2} {: <4} {} {: >3} {} {: >4} {:8.3f} {:8.3f} {:8.3f} {:#} {} {}\n",
                 pdbgroup, atoms_, atom.type(), atom.name(), ".", compid,
                 asymid, seq_id, positions[i][0], positions[i][1], positions[i][2],
-                atom.charge(), auth_asymid, seq_id, models_
+                atom.charge(), auth_asymid, models_
         );
 	}
 
