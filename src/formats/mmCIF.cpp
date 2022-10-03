@@ -469,12 +469,18 @@ void mmCIFFormat::read_atom_site(Frame& frame)
         file_.seekpos(steps_positions_[0]);
     }
 
-    while ( !file_.eof() )
+    while ( true )
     {
         auto line = file_.readline();
+
+        if ( file_.eof() )
+        {
+            break;
+        }
+
         reader_meta_data_.position = file_.tellpos();
 
-        if ( file_.tellpos() >= atom_site.position_data_end )
+        if ( file_.tellpos() > atom_site.position_data_end )
         {
             break;
         }
