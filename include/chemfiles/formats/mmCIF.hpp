@@ -138,6 +138,9 @@ private:
     /// The PDB icode, if any
     std::string pdb_idcode_;
 
+	/// The frame to read
+	size_t current_step_ = 0;
+
     // Currently read_multi_line return a std::string because multi-line in cif contains character at each line start.
     // It can be good to find a way to work only with string_view.
     std::string read_multi_line();
