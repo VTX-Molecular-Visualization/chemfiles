@@ -413,7 +413,8 @@ void mmCIFFormat::read(Frame& frame) {
 		PDBFormat::link_standard_residue_bonds( frame );
 	}
 
-	fill_assembly();
+	if ( !assembly_.computed )
+		fill_assembly();
 
 	if ( assembly_.assembly_generators.size() > 0 )
 		apply_symmetry( frame, assembly_.assembly_generators.begin()->assembly_id );
@@ -739,6 +740,7 @@ void mmCIFFormat::fill_assembly()
 {
 	if ( category_map_.find( "_pdbx_struct_assembly_gen" ) == category_map_.end() )
 	{
+		assembly_.computed = true;
 		return;
 	}
 
@@ -863,6 +865,8 @@ void mmCIFFormat::fill_assembly()
 	}
 
 	fill_assembly_operations();
+
+	assembly_.computed = true;
 }
 void mmCIFFormat::fill_assembly_operations()
 {

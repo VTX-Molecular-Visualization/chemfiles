@@ -72,6 +72,8 @@ private:
     public:
         std::vector<AssemblyGenerator> assembly_generators;
         std::map<std::string, AssemblyOperation> assembly_operations;
+        
+        bool computed = false;
     };
 
 public:
