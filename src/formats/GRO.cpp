@@ -77,6 +77,10 @@ void GROFormat::read_next(Frame& frame) {
     frame.add_velocities();
     frame.reserve(natoms);
 
+	int64_t			previousIndex = -1;
+	const int64_t	gromaxIndexLoopOffset = GRO_INDEX_MAX + 1;
+	int				residIndexLoop = 0;
+
     for (size_t i=0; i<natoms; i++) {
         auto line = file_.readline();
         if (line.length() < 44) {
@@ -110,6 +114,12 @@ void GROFormat::read_next(Frame& frame) {
         if (!resid) {
             continue;
         }
+
+		if (*resid == 0 && ((previousIndex % gromaxIndexLoopOffset) == GRO_INDEX_MAX))
+			residIndexLoop++;
+
+		previousIndex = *resid;
+		const int64_t residueIndexToStore = *resid + residIndexLoop * gromaxIndexLoopOffset;
 
         if (residues_.find(*resid) == residues_.end()) {
             Residue residue(resname, *resid);
@@ -162,8 +172,8 @@ void GROFormat::read_next(Frame& frame) {
 }
 
 static std::string to_gro_index(uint64_t i) {
-    if (i >= 99999) {
-        if (i == 99999) {
+    if (i >= GRO_INDEX_MAX) {
+        if (i == GRO_INDEX_MAX) {
             // Only warn once for this
             warning("GRO writer", "too many atoms, removing atomic id bigger than 100000");
         }
@@ -209,10 +219,10 @@ void GROFormat::write_next(const Frame& frame) {
             if (value <= 0) {
                 warning("GRO writer", "the residue id '{}' should not be negative or zero, treating it as blank", value);
                 value = max_resid++;
-                if (value <= 99999) {
+                if (value <= GRO_INDEX_MAX) {
                     resid = std::to_string(value);
                 }
-            } else if (value <= 99999) {
+            } else if (value <= GRO_INDEX_MAX) {
                 resid = std::to_string(value);
             } else {
                 warning("GRO writer", "too many residues, removing residue id");
@@ -220,7 +230,7 @@ void GROFormat::write_next(const Frame& frame) {
         } else {
             // We need to manually assign a residue ID
             auto value = max_resid++;
-            if (value <= 99999) {
+            if (value <= GRO_INDEX_MAX) {
                 resid = std::to_string(value);
             }
         }

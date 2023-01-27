@@ -34,6 +34,7 @@ public:
     optional<uint64_t> forward() override;
 
 private:
+	const int GRO_INDEX_MAX = 99999;
     /// Map of residues, indexed by residue id.
     std::map<int64_t, Residue> residues_;
 };
