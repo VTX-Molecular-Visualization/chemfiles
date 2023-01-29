@@ -58,6 +58,9 @@ using chemfiles::private_details::is_upper_triangular;
 /// message
 static void check_values_size(const Vector3D& values, unsigned width, const std::string& context);
 
+static const int GRO_INDEX_MAX = 99999;
+
+
 void GROFormat::read_next(Frame& frame) {
     residues_.clear();
 
@@ -172,8 +175,8 @@ void GROFormat::read_next(Frame& frame) {
 }
 
 static std::string to_gro_index(uint64_t i) {
-    if (i >= GRO_INDEX_MAX) {
-        if (i == GRO_INDEX_MAX) {
+    if (i >= GROFormat::GRO_INDEX_MAX) {
+        if (i == GROFormat::GRO_INDEX_MAX) {
             // Only warn once for this
             warning("GRO writer", "too many atoms, removing atomic id bigger than 100000");
         }

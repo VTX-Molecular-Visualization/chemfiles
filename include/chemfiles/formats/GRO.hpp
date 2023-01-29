@@ -23,6 +23,8 @@ class FormatMetadata;
 /// GRO file format reader and writer.
 class GROFormat final: public TextFormat {
 public:
+    static const int GRO_INDEX_MAX;
+
     GROFormat(std::string path, File::Mode mode, File::Compression compression):
         TextFormat(std::move(path), mode, compression) {}
 
@@ -34,7 +36,6 @@ public:
     optional<uint64_t> forward() override;
 
 private:
-	const int GRO_INDEX_MAX = 99999;
     /// Map of residues, indexed by residue id.
     std::map<int64_t, Residue> residues_;
 };
