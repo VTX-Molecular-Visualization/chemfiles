@@ -23,7 +23,7 @@ class FormatMetadata;
 /// GRO file format reader and writer.
 class GROFormat final: public TextFormat {
 public:
-    static const int GRO_INDEX_MAX;
+    static const int64_t GRO_INDEX_MAX;
 
     GROFormat(std::string path, File::Mode mode, File::Compression compression):
         TextFormat(std::move(path), mode, compression) {}

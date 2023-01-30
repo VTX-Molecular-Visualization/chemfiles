@@ -58,7 +58,7 @@ using chemfiles::private_details::is_upper_triangular;
 /// message
 static void check_values_size(const Vector3D& values, unsigned width, const std::string& context);
 
-static const int GRO_INDEX_MAX = 99999;
+static const int64_t GRO_INDEX_MAX = 99999;
 
 
 void GROFormat::read_next(Frame& frame) {
