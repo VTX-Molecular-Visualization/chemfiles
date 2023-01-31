@@ -72,7 +72,7 @@ std::array<double, 3> LAMMPSTrajectoryFormat::read_cell(Frame& frame) {
                 shape = UnitCell::TRICLINIC;
             }
             line = file_.readline();
-            splitted = split(line, ' ');
+            auto splitted = split(line, ' ');
             if ((shape == UnitCell::ORTHORHOMBIC && splitted.size() != 2) ||
                 (shape == UnitCell::TRICLINIC && splitted.size() != 3)) {
                 size_t expected_dims = (shape == UnitCell::ORTHORHOMBIC) ? 2 : 3;
@@ -133,8 +133,8 @@ std::array<double, 3> LAMMPSTrajectoryFormat::read_cell(Frame& frame) {
     }
 }
 
-/// LAMMPS is able to dump various per-atom properties and arbitrary user-defined
-/// variables
+// LAMMPS is able to dump various per-atom properties and arbitrary user-defined variables
+// posible per-atom attributes by dump command
 enum lammps_atom_attr_t {
     // other possible attributes that are not important for chemfiles
     CUSTOM,
@@ -352,18 +352,19 @@ void LAMMPSTrajectoryFormat::read_next(Frame& frame) {
     if (!item) {
         throw format_error("can not read next step as LAMMPS format: expected an ITEM entry");
     }
-    auto atoms_item = split(*item, ' ');
-    if (atoms_item.empty() || atoms_item[0] != "ATOMS") {
+    auto splitted = split(*item, ' ');
+    if (splitted.empty() || splitted[0] != "ATOMS") {
         throw format_error("can not read next step as LAMMPS format: expected 'ATOMS' got '{}'",
                            *item);
     }
+
     std::vector<AtomField> fields;
-    fields.reserve(atoms_item.size() - 1);
+    fields.reserve(splitted.size() - 1);
     optional<size_t> atomid_column = nullopt;
     std::vector<bool> duplicate_check;
     optional<std::vector<std::array<int, 3>>> images = nullopt;
-    for (size_t i = 1; i < atoms_item.size(); ++i) {
-        auto attr = attribute_from_str(atoms_item[i]);
+    for (size_t i = 1; i < splitted.size(); ++i) {
+        auto attr = attribute_from_str(splitted[i]);
         if (attr == ATOMID) {
             atomid_column = i - 1;
             duplicate_check = std::vector<bool>(natoms, false);
@@ -374,7 +375,7 @@ void LAMMPSTrajectoryFormat::read_next(Frame& frame) {
         if (attr == IMGX || attr == IMGY || attr == IMGZ) {
             images = std::vector<std::array<int, 3>>(natoms, {0, 0, 0});
         }
-        fields.push_back({atoms_item[i].to_string(), attr});
+        fields.push_back({splitted[i].to_string(), attr});
     }
     lammps_position_representation_t use_pos_repr = detect_best_pos_representation(fields);
 
@@ -550,6 +551,13 @@ void LAMMPSTrajectoryFormat::read_next(Frame& frame) {
         for (size_t i = 0; i < natoms; ++i) {
             unwrap(positions[i], (*images)[i], matrix);
         }
+    }
+
+    if (use_pos_repr == UNWRAPPED || use_pos_repr == SCALED_UNWRAPPED || images) {
+        frame.set("is_unwrapped", true);
+    }
+    else {
+        frame.set("is_unwrapped", false);
     }
 }
 

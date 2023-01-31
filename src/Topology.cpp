@@ -115,8 +115,6 @@ const std::vector<Bond::BondOrder>& Topology::bond_orders() const {
     return connect_.bond_orders();
 }
 
-
-
 const std::vector<Angle>& Topology::angles() const {
     return connect_.angles().as_vec();
 }

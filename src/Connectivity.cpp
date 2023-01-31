@@ -242,11 +242,9 @@ void Connectivity::atom_removed(size_t index) {
     }
 }
 
-Bond::BondOrder Connectivity::bond_order(size_t i, size_t j) const
-{
+Bond::BondOrder Connectivity::bond_order(size_t i, size_t j) const {
     auto pos = bonds_.find(Bond(i, j));
-    if ( pos != bonds_.end() )
-    {
+    if (pos != bonds_.end()) {
         auto diff = std::distance(bonds_.cbegin(), pos);
         return bond_orders_[static_cast<size_t>(diff)];
     }

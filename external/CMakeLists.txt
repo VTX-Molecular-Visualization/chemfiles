@@ -150,11 +150,10 @@ mark_as_advanced(FORCE
 )
 
 # ==========
-# pugixml: http://github.com/chemfiles/pugixml
+# toml11
 # ==========
-unpack_library(pugixml)
-list(APPEND EXTERNAL_INCLUDES ${CMAKE_CURRENT_BINARY_DIR}/pugixml/src)
-add_library(pugixml OBJECT ${CMAKE_CURRENT_BINARY_DIR}/pugixml/src/pugixml.cpp)
+unpack_library(toml11)
+list(APPEND EXTERNAL_INCLUDES ${CMAKE_CURRENT_BINARY_DIR}/toml11)
 
 # ==========
 # TNG io: https://github.com/chemfiles/tng
@@ -225,6 +224,14 @@ list(APPEND EXTERNAL_INCLUDES ${CMAKE_CURRENT_BINARY_DIR}/molfiles/include)
 unpack_library(mmtf-cpp)
 list(APPEND EXTERNAL_INCLUDES ${CMAKE_CURRENT_BINARY_DIR}/mmtf-cpp/include )
 list(APPEND EXTERNAL_INCLUDES ${CMAKE_CURRENT_BINARY_DIR}/mmtf-cpp/msgpack-c/include )
+
+# ==========
+# pugixml: http://github.com/chemfiles/pugixml
+# ==========
+unpack_library(pugixml)
+list(APPEND EXTERNAL_INCLUDES ${CMAKE_CURRENT_BINARY_DIR}/pugixml/src)
+add_library(pugixml OBJECT ${CMAKE_CURRENT_BINARY_DIR}/pugixml/src/pugixml.cpp)
+
 
 # ==========
 # gemmi

@@ -53,10 +53,10 @@ public:
     /// @example{vector3d/norm.cpp}
     double norm() const;
 
-        /// Compute the sqr euclidean norm of this Vector3D.
-        ///
-        /// @example{vector3d/norm.cpp}
-        double sqrNorm() const;
+    /// Compute the sqr euclidean norm of this Vector3D.
+    ///
+    /// @example{vector3d/norm.cpp}
+    double sqrNorm() const;
 
     /// Compound addition of two vectors
     Vector3D& operator+=(const Vector3D& rhs);

@@ -98,7 +98,7 @@ jobs:
             cxx: emcc
             build-type: Debug
             use-emsdk: true
-            emscripten-version: 2.0.29
+            emscripten-version: 3.1.16
             cmake-extra-args:
               - -DCHFL_BUILD_DOCTESTS=OFF
               - -DBUILD_SHARED_LIBS=OFF
@@ -120,18 +120,18 @@ jobs:
           # macOS builders
           # ==
           - name: macOS / clang
-            os: macos-10.15
+            os: macos-11
             cc: clang
             cxx: clang++
             build-type: Debug
           - name: macOS / gcc
-            os: macos-10.15
-            cc: gcc-7
-            cxx: g++-7
+            os: macos-11
+            cc: gcc-9
+            cxx: g++-9
             build-type: Debug
             setup-dependencies: |
               export HOMEBREW_NO_AUTO_UPDATE=1
-              brew install gcc@7
+              brew install gcc@9
           # ==
           # windows builders
           # ==
@@ -139,7 +139,9 @@ jobs:
             os: windows-2019
             cc: cl.exe
             cxx: cl.exe
-            build-type: Debug
+            # The compiler completely fills up the disk when building all tests
+            # in debug mode, so use release
+            build-type: Release
             cmake-extra-args:
               - -G "Visual Studio 16 2019" -A x64
           - name: windows / MSVC 64-bit / static library
@@ -215,12 +217,6 @@ jobs:
       - name: check the list of exported symbols
         if: matrix.check-exported-symbols
         run: ./scripts/ci/check-exported-symbols.py build/libchemfiles.so
-      - name: extract coverage data
-        if: matrix.collect-coverage
-        run: find . -type f -name '*.gcno' -exec gcov -p {} +
       - name: upload coverage
-        uses: codecov/codecov-action@v2
         if: matrix.collect-coverage
-        with:
-          fail_ci_if_error: true
-          verbose: true
+        run: bash <(curl -s https://codecov.io/bash)

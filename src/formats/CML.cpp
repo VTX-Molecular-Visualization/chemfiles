@@ -592,10 +592,10 @@ void CMLFormat::write(const Frame& frame) {
         }
 
         auto& atom_properties = atom.properties();
-        if (!atom_properties) {
+        if (!atom_properties.size()) {
             continue;
         }
-        for (auto& prop : *atom_properties) {
+        for (auto& prop : atom_properties) {
             // special properties which are already written as attributes
             // charge and isotope are not stored as properties, so no need to check
             if (prop.first == "hydrogen_count" || prop.first == "title") {

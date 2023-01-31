@@ -19,6 +19,7 @@
 #include "chemfiles/Topology.hpp"
 #include "chemfiles/UnitCell.hpp"
 #include "chemfiles/Connectivity.hpp"
+#include "chemfiles/Configuration.hpp"
 
 #include "chemfiles/Frame.hpp"
 
@@ -27,7 +28,7 @@ using namespace chemfiles;
 // get radius compatible with VMD bond guessing algorithm
 static optional<double> guess_bonds_radius(const Atom& atom);
 
-Frame::Frame(UnitCell cell) : cell_(std::move(cell)) {} // NOLINT: std::move for trivially copyable type
+Frame::Frame(UnitCell cell): cell_(std::move(cell)) {} // NOLINT: std::move for trivially copyable type
 
 size_t Frame::size() const {
     assert(positions_.size() == topology_.size());
@@ -515,8 +516,7 @@ double Frame::out_of_plane(size_t i, size_t j, size_t k, size_t m) const {
     if (n_norm < 1e-12) {
         // if i, k, and m are colinear, then j is always inside the plane
         return 0;
-    }
-    else {
+    } else {
         return dot(rji, n) / n_norm;
     }
 }
@@ -534,9 +534,14 @@ optional<double> guess_bonds_radius(const Atom& atom) {
     const auto& type = atom.type();
     auto it = BOND_GUESSING_RADII.find(type);
     if (it != BOND_GUESSING_RADII.end()) {
-        return it->second;
-    }
-    else {
+        // allow configuration file to override data from BOND_GUESSING_RADII
+        auto user_config = Configuration::atom_data(type);
+        if (user_config && user_config->vdw_radius) {
+            return user_config->vdw_radius.value();
+        } else {
+            return it->second;
+        }
+    } else {
         // default to chemfiles provided atom type
         return atom.vdw_radius();
     }

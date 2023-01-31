@@ -188,12 +188,7 @@ extern "C" chfl_status chfl_atom_properties_count(const CHFL_ATOM* const atom, u
     CHECK_POINTER(atom);
     CHECK_POINTER(count);
     CHFL_ERROR_CATCH(
-        if (atom->properties()) {
-            *count = static_cast<uint64_t>(atom->properties().value().size());
-        }
-        else {
-            *count = 0;
-        }
+        *count = static_cast<uint64_t>(atom->properties().size());
     )
 }
 
@@ -202,21 +197,15 @@ extern "C" chfl_status chfl_atom_list_properties(const CHFL_ATOM* const atom, co
     CHECK_POINTER(names);
     CHFL_ERROR_CATCH(
         auto& properties = atom->properties();
-        size_t property_size = 0;
-        if (properties) {
-            property_size = (*properties).size();
-        }
-        if (checked_cast(count) != property_size) {
+        if (checked_cast(count) != properties.size()) {
             set_last_error("wrong data size in function 'chfl_atom_list_properties'.");
             return CHFL_MEMORY_ERROR;
         }
 
-        if (properties) {
-            size_t i = 0;
-            for (auto& it: *properties) {
-                names[i] = it.first.c_str();
-                i++;
-            }
+        size_t i = 0;
+        for (auto& it: properties) {
+            names[i] = it.first.c_str();
+            i++;
         }
     )
 }
