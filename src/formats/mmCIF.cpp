@@ -511,10 +511,15 @@ void mmCIFFormat::read_atom_site( Frame & frame )
 			break;
 		}
 
-        Atom atom(
-            line_split[label_atom_id->second].to_string(),
-            line_split[type_symbol].to_string()
-        );
+		string_view atomName = line_split[label_atom_id->second];
+		const bool	atomNameSurroundedByQuotes = atomName[0] == '"';
+
+		if (atomNameSurroundedByQuotes)
+		{
+			atomName = line_split[label_atom_id->second].substr(1, atomName.length() - 2);
+		}
+
+		Atom atom(atomName.to_string(), line_split[type_symbol].to_string());
 
         if ( label_alt_id != atom_site_map.end() &&
             line_split[label_alt_id->second] != "." )
