@@ -173,7 +173,7 @@ jobs:
               - -DCMAKE_SHARED_LINKER_FLAGS="-static-libstdc++"
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           fetch-depth: 2
       - name: Set up MinGW
