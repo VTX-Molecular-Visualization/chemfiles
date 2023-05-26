@@ -255,3 +255,21 @@ Bond::BondOrder Connectivity::bond_order(size_t i, size_t j) const {
         i, j
     );
 }
+
+void Connectivity::change_bond_order(size_t i, size_t j, Bond::BondOrder order)
+{
+    auto pos = bonds_.find(Bond(i, j));
+    if ( pos != bonds_.end() )
+    {
+        auto diff = std::distance(bonds_.cbegin(), pos);
+        bond_orders_[static_cast<size_t>(diff)] = order;
+    }
+    else
+    {
+        throw error(
+            "out of bounds atomic index in `Connectivity::bond_order`: "
+            "No bond between {} and {} exists",
+            i, j
+        );
+    }
+}

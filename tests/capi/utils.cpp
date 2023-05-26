@@ -37,6 +37,7 @@ generate_function_status(MemoryError)
 generate_function_status(FileError)
 generate_function_status(FormatError)
 generate_function_status(SelectionError)
+generate_function_status(ConfigurationError)
 generate_function_status(OutOfBounds)
 generate_function_status(PropertyError)
 generate_function_status(Error)
@@ -64,6 +65,7 @@ generate_function_goto(MemoryError)
 generate_function_goto(FileError)
 generate_function_goto(FormatError)
 generate_function_goto(SelectionError)
+generate_function_goto(ConfigurationError)
 generate_function_goto(OutOfBounds)
 generate_function_goto(PropertyError)
 generate_function_goto(Error)
@@ -90,6 +92,9 @@ TEST_CASE("Error handling") {
 
         CHECK(throw_SelectionError() == CHFL_SELECTION_ERROR);
         CHECK(std::string(chfl_last_error()) == "SelectionError");
+
+        CHECK(throw_ConfigurationError() == CHFL_CONFIGURATION_ERROR);
+        CHECK(std::string(chfl_last_error()) == "ConfigurationError");
 
         CHECK(throw_OutOfBounds() == CHFL_OUT_OF_BOUNDS);
         CHECK(std::string(chfl_last_error()) == "OutOfBounds");
@@ -131,6 +136,9 @@ TEST_CASE("Error handling") {
 
         CHECK(goto_SelectionError() == 1);
         CHECK(std::string(chfl_last_error()) == "SelectionError");
+
+        CHECK(goto_ConfigurationError() == 1);
+        CHECK(std::string(chfl_last_error()) == "ConfigurationError");
 
         CHECK(goto_OutOfBounds() == 1);
         CHECK(std::string(chfl_last_error()) == "OutOfBounds");

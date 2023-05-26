@@ -331,31 +331,29 @@ properties_list_t get_atom_properties(const Frame& frame) {
     auto partially_defined_already_warned = std::set<std::string>();
 
     const auto& first_atom = frame[0];
-    if (first_atom.properties()) {
-        for (const auto& property: *first_atom.properties()) {
-            if (!is_valid_property_name(property.first)) {
+    for (const auto& property: first_atom.properties()) {
+        if (!is_valid_property_name(property.first)) {
+            warning(
+                "Extended XYZ", "'{}' is not a valid property name for extended "
+                "XYZ, is will not be saved",
+                property.first, 0
+            );
+            partially_defined_already_warned.insert(property.first);
+            continue;
+        }
+
+        if (property.second.kind() == Property::STRING) {
+            if (should_be_quoted(property.second.as_string())) {
                 warning(
-                    "Extended XYZ", "'{}' is not a valid property name for extended "
-                    "XYZ, is will not be saved",
+                    "Extended XYZ", "string value for property '{}' on atom {} "
+                    "can not be be saved as an atomic property",
                     property.first, 0
                 );
-                partially_defined_already_warned.insert(property.first);
                 continue;
             }
-
-            if (property.second.kind() == Property::STRING) {
-                if (should_be_quoted(property.second.as_string())) {
-                    warning(
-                        "Extended XYZ", "string value for property '{}' on atom {} "
-                        "can not be be saved as an atomic property",
-                        property.first, 0
-                    );
-                    continue;
-                }
-            }
-
-            all_properties.emplace(property.first, property.second.kind());
         }
+
+        all_properties.emplace(property.first, property.second.kind());
     }
 
     for (size_t i=1; i<frame.size(); i++) {
@@ -389,10 +387,9 @@ properties_list_t get_atom_properties(const Frame& frame) {
             }
         }
 
-        auto& atom_properties = atom.properties();
-        if (atom_properties && (*atom_properties).size() > all_properties.size()) {
+        if (atom.properties().size() > all_properties.size()) {
             // warn for properties defined on this atom but not on others
-            for (const auto& property: *atom.properties()) {
+            for (const auto& property: atom.properties()) {
                 if (all_properties.count(property.first) == 0) {
                     if (partially_defined_already_warned.count(property.first) == 0) {
                         warning(

@@ -15,6 +15,7 @@
 #include "chemfiles/UnitCell.hpp"
 #include "chemfiles/Topology.hpp"
 #include "chemfiles/FormatFactory.hpp"
+#include "chemfiles/Configuration.hpp"
 #include "chemfiles/FormatMetadata.hpp"
 #include "chemfiles/files/MemoryBuffer.hpp"
 
@@ -157,8 +158,11 @@ void Trajectory::pre_read(size_t step) {
 void Trajectory::post_read(Frame& frame) {
     if (custom_topology_) {
         frame.set_topology(*custom_topology_);
+    } else {
+        for (auto& atom: frame) {
+            atom.set_type(Configuration::rename(atom.type()));
+        }
     }
-
     if (custom_cell_) {
         frame.set_cell(*custom_cell_);
     }

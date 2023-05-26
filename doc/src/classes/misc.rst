@@ -72,6 +72,9 @@ nicely with any existing C++ error handling.
 .. doxygenstruct:: chemfiles::SelectionError
     :members:
 
+.. doxygenstruct:: chemfiles::ConfigurationError
+    :members:
+
 .. doxygenstruct:: chemfiles::OutOfBounds
     :members:
 
@@ -90,3 +93,11 @@ each warning event.
 .. doxygenfunction:: chemfiles::set_warning_callback
 
 .. doxygentypedef:: chemfiles::warning_callback_t
+
+Configuration files
+-------------------
+
+You can add more :ref:`configuration <configuration>` file to chemfiles with
+:cpp:func:`chemfiles::add_configuration`.
+
+.. doxygenfunction:: chemfiles::add_configuration

@@ -543,7 +543,8 @@ void PDBFormat::link_standard_residue_bonds(Frame& frame) {
     size_t previous_carboxylic_id = 0;
 
     for (const auto& residue: frame.topology().residues()) {
-        auto residue_table = PDBConnectivity::find(residue.name());
+
+        const auto & residue_table = PDBConnectivity::find(residue.name());
         if (!residue_table) {
             continue;
         }
@@ -553,15 +554,15 @@ void PDBFormat::link_standard_residue_bonds(Frame& frame) {
             atom_name_to_index[frame[atom].name()] =  atom;
         }
 
-        const auto& amide_nitrogen = atom_name_to_index.find("N");
-        const auto& amide_carbon = atom_name_to_index.find("C");
-
         if (!residue.id()) {
             warning("PDB reader", "got a residues without id, this should not happen");
             continue;
         }
 
         auto resid = *residue.id();
+
+        const auto& amide_nitrogen = atom_name_to_index.find("N");
+        const auto& amide_carbon = atom_name_to_index.find("C");
         if (link_previous_peptide &&
             amide_nitrogen != atom_name_to_index.end() &&
             resid == previous_residue_id + 1 )
@@ -680,7 +681,7 @@ Record get_record(string_view line) {
     }
 }
 
-static std::string to_pdb_index(int64_t value, size_t width) {
+static std::string to_pdb_index(int64_t value, uint64_t width) {
     auto encoded = encode_hybrid36(width, value + 1);
 
     if (encoded[0] == '*' && (value == MAX_HYBRID36_W4_NUMBER || value == MAX_HYBRID36_W5_NUMBER)) {
