@@ -222,11 +222,11 @@ install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/ DESTINATION ${INCLUDE_INSTALL_D
 install(DIRECTORY ${PROJECT_BINARY_DIR}/include/ DESTINATION ${INCLUDE_INSTALL_DIR})
 
 # uninstall target
-configure_file(
-    "${PROJECT_SOURCE_DIR}/cmake/uninstall.in.cmake"
-    "${PROJECT_BINARY_DIR}/uninstall.cmake"
-    @ONLY
-)
-add_custom_target(uninstall
-    COMMAND ${CMAKE_COMMAND} -P ${PROJECT_BINARY_DIR}/uninstall.cmake
-)
+#configure_file(
+#    "${PROJECT_SOURCE_DIR}/cmake/uninstall.in.cmake"
+#    "${PROJECT_BINARY_DIR}/uninstall.cmake"
+#    @ONLY
+#)
+#add_custom_target(uninstall
+#    COMMAND ${CMAKE_COMMAND} -P ${PROJECT_BINARY_DIR}/uninstall.cmake
+#)
