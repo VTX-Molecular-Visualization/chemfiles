@@ -37,4 +37,6 @@ class VTXChemfilesRecipe(ConanFile):
 
     def package_info(self):
         self.cpp_info.libs = ["chemfiles"]
+        if self.settings.os == "Windows":
+            self.cpp_info.system_libs.append('ws2_32')
 
