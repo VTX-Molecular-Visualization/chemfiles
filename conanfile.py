@@ -1,3 +1,4 @@
+import os
 from conan import ConanFile
 from conan.tools.cmake import CMake, cmake_layout
 from conan.tools.scm import Git
@@ -20,8 +21,11 @@ class VTXChemfilesRecipe(ConanFile):
             del self.options.fPIC
 
     def layout(self):
-        cmake_layout(self)
-
+        cmake_layout(self)    
+        # Add generated include dir.        
+        self.cpp.source.includedirs = ["include", os.path.join(self.folders.build, "include")]
+        #self.cpp.package.includedirs = ["include", os.path.join(self.folders.build, "include")]
+        
     def build(self):
         cmake = CMake(self)
         cmake.configure()
