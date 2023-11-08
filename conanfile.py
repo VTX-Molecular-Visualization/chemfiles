@@ -36,7 +36,6 @@ class ChemfilesRecipe(ConanFile):
 
     def package_info(self):
         self.cpp_info.libs = ["chemfiles"]
-        #self.cpp.package.includedirs = ["include", os.path.join(self.folders.build, "include")]
         if self.settings.os == "Windows":
             self.cpp_info.system_libs.append('ws2_32')
 
