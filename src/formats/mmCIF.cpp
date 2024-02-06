@@ -52,8 +52,35 @@ template<> const FormatMetadata& chemfiles::format_metadata<mmCIFFormat>() {
 	return metadata;
 }
 
-/// CIF files store which digits are insignificant, we need to remove this
-static double cif_to_double(std::string line);
+namespace {
+	/// CIF files store which digits are insignificant, we need to remove this
+	static double cif_to_double(std::string line)
+	{
+		line.erase(std::remove(line.begin(), line.end(), '('), line.end());
+		line.erase(std::remove(line.begin(), line.end(), ')'), line.end());
+		return parse<double>(line);
+	}
+
+	// string_view in cpp 17 doesn't contains ends_with function. Reimplement it
+	static bool ends_with(const std::string_view& p_str, const std::string_view& p_end) {
+		if (p_str.size() < p_end.size())
+			return false;
+
+		auto itStr = p_str.crbegin();
+		auto itEnd = p_end.crbegin();
+
+		while (itEnd != p_end.crend())
+		{
+			if (*itStr != *itEnd)
+				return false;
+
+			itStr++;
+			itEnd++;
+		}
+
+		return true;
+	}
+}
 
 void mmCIFFormat::init_() {
 	if (file_.mode() == File::WRITE) {
@@ -1185,31 +1212,3 @@ void mmCIFFormat::build_assembly_generators(const std::string& assembly_id,
 		assembly_.assembly_generators.emplace_back(assemblyGenerator);
 	}
 }
-
-double cif_to_double(std::string line)
-{
-	line.erase(std::remove(line.begin(), line.end(), '('), line.end());
-	line.erase(std::remove(line.begin(), line.end(), ')'), line.end());
-	return parse<double>(line);
-}
-
-bool ends_with(const std::string_view& p_str, const std::string_view& p_end)
-{
-	if (p_str.size() < p_end.size())
-		return false;
-
-	auto itStr = p_str.crbegin();
-	auto itEnd = p_end.crbegin();
-
-	while (itEnd != p_end.crend())
-	{
-		if (*itStr != *itEnd)
-			return false;
-
-		itStr++;
-		itEnd++;
-	}
-
-	return true;
-}
-

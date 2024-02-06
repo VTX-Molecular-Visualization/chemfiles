@@ -147,9 +147,6 @@ namespace chemfiles {
 		// Currently read_multi_line return a std::string because multi-line in cif contains character at each line start.
 		// It can be good to find a way to work only with string_view.
 		std::string read_multi_line();
-
-		// 
-		static bool ends_with(const std::string_view& p_str, const std::string_view& p_end);
 	};
 
 	template<> const FormatMetadata& format_metadata<mmCIFFormat>();
