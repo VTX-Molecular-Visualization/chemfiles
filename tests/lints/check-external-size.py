@@ -1,13 +1,10 @@
-#!/usr/bin/env python
-# -*- coding: utf8 -*-
 """
 This script checks that all the external archive included in the repository are
 as small as they can be.
 """
-from __future__ import print_function
+import glob
 import os
 import sys
-import glob
 
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 ERRORS = 0
@@ -15,15 +12,14 @@ ERRORS = 0
 
 # when adding new files here, make sure that they are as small as possible!
 EXPECTED_SIZES = {
-    "bzip2.tar.gz": 114,
-    "fmt.tar.gz": 701,
+    "bzip2.tar.gz": 58,
+    "fmt.tar.gz": 189,
     "gemmi.tar.gz": 476,
-    "lzma.tar.gz": 256,
+    "lzma.tar.gz": 302,
     "mmtf-cpp.tar.gz": 439,
     "molfiles.tar.gz": 477,
-    "pugixml.tar.gz": 198,
+    "pugixml.tar.gz": 78,
     "tng.tar.gz": 207,
-    "toml11.tar.gz": 69,
     "xdrfile.tar.gz": 26,
     "zlib.tar.gz": 370,
 }
@@ -40,6 +36,7 @@ if __name__ == "__main__":
         size = os.path.getsize(path)
         size_kb = size // 1024
         name = os.path.basename(path)
+        print(name, size_kb)
 
         if name not in EXPECTED_SIZES:
             error("{} is not a known external file, please edit this file".format(name))

@@ -8,11 +8,11 @@
 #include <array>
 #include <string>
 #include <vector>
+#include <string_view>
 
 #include "chemfiles/error_fmt.hpp"
 #include "chemfiles/external/optional.hpp"
 #include "chemfiles/parse.hpp"
-#include "chemfiles/string_view.hpp"
 #include "chemfiles/types.hpp"
 #include "chemfiles/utils.hpp"
 #include "chemfiles/warnings.hpp"
@@ -48,7 +48,7 @@ template <> const FormatMetadata& chemfiles::format_metadata<LAMMPSTrajectoryFor
 
 using chemfiles::private_details::is_upper_triangular;
 
-static optional<string_view> get_item(string_view line) {
+static optional<std::string_view> get_item(std::string_view line) {
     auto splitted = split(line, ':');
     if (splitted.size() != 2 || trim(splitted[0]) != "ITEM") {
         return nullopt;
@@ -68,11 +68,11 @@ std::array<double, 3> LAMMPSTrajectoryFormat::read_cell(Frame& frame) {
             auto matrix = Matrix3D::unit();
             std::array<double, 3> origin;
             auto shape = UnitCell::ORTHORHOMBIC;
-            if (splitted.size() >= 5 && (*item).find("xy xz yz") != string_view::npos) {
+            if (splitted.size() >= 5 && (*item).find("xy xz yz") != std::string_view::npos) {
                 shape = UnitCell::TRICLINIC;
             }
             line = file_.readline();
-            auto splitted = split(line, ' ');
+            splitted = split(line, ' ');
             if ((shape == UnitCell::ORTHORHOMBIC && splitted.size() != 2) ||
                 (shape == UnitCell::TRICLINIC && splitted.size() != 3)) {
                 size_t expected_dims = (shape == UnitCell::ORTHORHOMBIC) ? 2 : 3;
@@ -133,8 +133,8 @@ std::array<double, 3> LAMMPSTrajectoryFormat::read_cell(Frame& frame) {
     }
 }
 
-// LAMMPS is able to dump various per-atom properties and arbitrary user-defined variables
-// posible per-atom attributes by dump command
+/// LAMMPS is able to dump various per-atom properties and arbitrary user-defined
+/// variables
 enum lammps_atom_attr_t {
     // other possible attributes that are not important for chemfiles
     CUSTOM,
@@ -190,7 +190,7 @@ enum lammps_position_representation_t {
     SCALED_UNWRAPPED,
 };
 
-static lammps_atom_attr_t attribute_from_str(string_view attr_str) {
+static lammps_atom_attr_t attribute_from_str(std::string_view attr_str) {
     if (attr_str == "id") {
         return ATOMID;
     } else if (attr_str == "type") {
@@ -311,7 +311,7 @@ void LAMMPSTrajectoryFormat::read_next(Frame& frame) {
         throw format_error("can not read next step as LAMMPS format: expected an ITEM entry");
     }
     if (*item == "UNITS") { // optional
-        frame.set("lammps_units", trim(file_.readline()).to_string());
+        frame.set("lammps_units", std::string(trim(file_.readline())));
         item = get_item(file_.readline());
         if (!item) {
             throw format_error("can not read next step as LAMMPS format: expected an ITEM entry");
@@ -352,19 +352,18 @@ void LAMMPSTrajectoryFormat::read_next(Frame& frame) {
     if (!item) {
         throw format_error("can not read next step as LAMMPS format: expected an ITEM entry");
     }
-    auto splitted = split(*item, ' ');
-    if (splitted.empty() || splitted[0] != "ATOMS") {
+    auto atoms_item = split(*item, ' ');
+    if (atoms_item.empty() || atoms_item[0] != "ATOMS") {
         throw format_error("can not read next step as LAMMPS format: expected 'ATOMS' got '{}'",
                            *item);
     }
-
     std::vector<AtomField> fields;
-    fields.reserve(splitted.size() - 1);
+    fields.reserve(atoms_item.size() - 1);
     optional<size_t> atomid_column = nullopt;
     std::vector<bool> duplicate_check;
     optional<std::vector<std::array<int, 3>>> images = nullopt;
-    for (size_t i = 1; i < splitted.size(); ++i) {
-        auto attr = attribute_from_str(splitted[i]);
+    for (size_t i = 1; i < atoms_item.size(); ++i) {
+        auto attr = attribute_from_str(atoms_item[i]);
         if (attr == ATOMID) {
             atomid_column = i - 1;
             duplicate_check = std::vector<bool>(natoms, false);
@@ -375,7 +374,7 @@ void LAMMPSTrajectoryFormat::read_next(Frame& frame) {
         if (attr == IMGX || attr == IMGY || attr == IMGZ) {
             images = std::vector<std::array<int, 3>>(natoms, {0, 0, 0});
         }
-        fields.push_back({splitted[i].to_string(), attr});
+        fields.push_back({std::string(atoms_item[i]), attr});
     }
     lammps_position_representation_t use_pos_repr = detect_best_pos_representation(fields);
 
@@ -412,10 +411,10 @@ void LAMMPSTrajectoryFormat::read_next(Frame& frame) {
         for (size_t j = 0; j < fields.size(); ++j) {
             switch (fields[j].kind) {
             case TYPE:
-                atom.set_type(splitted[j].to_string());
+                atom.set_type(std::string(splitted[j]));
                 break;
             case ELEMENT:
-                atom.set_name(splitted[j].to_string());
+                atom.set_name(std::string(splitted[j]));
                 break;
             case MASS:
                 atom.set_mass(parse<double>(splitted[j]));
@@ -520,7 +519,7 @@ void LAMMPSTrajectoryFormat::read_next(Frame& frame) {
                     atom.set(fields[j].name, parse<double>(splitted[j]));
                 } catch (const Error&) {
                     // use the string value as fallback
-                    atom.set(fields[j].name, splitted[j].to_string());
+                    atom.set(fields[j].name, std::string(splitted[j]));
                 }
                 break;
             }

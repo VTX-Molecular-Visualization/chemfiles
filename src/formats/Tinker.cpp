@@ -3,16 +3,17 @@
 
 #include <cassert>
 #include <cstdint>
+
 #include <array>
 #include <string>
 #include <vector>
+#include <string_view>
 
 #include "chemfiles/types.hpp"
 #include "chemfiles/utils.hpp"
 #include "chemfiles/parse.hpp"
 #include "chemfiles/error_fmt.hpp"
 #include "chemfiles/sorted_set.hpp"
-#include "chemfiles/string_view.hpp"
 #include "chemfiles/external/optional.hpp"
 
 #include "chemfiles/File.hpp"
@@ -47,7 +48,7 @@ template<> const FormatMetadata& chemfiles::format_metadata<TinkerFormat>() {
     return metadata;
 }
 
-static bool is_unit_cell_line(string_view line);
+static bool is_unit_cell_line(std::string_view line);
 
 void TinkerFormat::read_next(Frame& frame) {
     auto line = file_.readline();
@@ -96,7 +97,7 @@ void TinkerFormat::write_next(const Frame& frame) {
     auto lengths = frame.cell().lengths();
     auto angles = frame.cell().angles();
     file_.print("{} written by the chemfiles library\n", frame.size());
-    file_.print("{} {} {} {} {} {}\n",
+    file_.print("{:#g} {:#g} {:#g} {:#g} {:#g} {:#g}\n",
         lengths[0], lengths[1], lengths[2], angles[0], angles[1], angles[2]
     );
 
@@ -127,7 +128,7 @@ void TinkerFormat::write_next(const Frame& frame) {
         assert(it != types_id.end());
         auto type = (it - types_id.begin()) + 1;
 
-        file_.print("{} {} {} {} {} {}",
+        file_.print("{} {} {:#g} {:#g} {:#g} {}",
             i + 1, name, positions[i][0], positions[i][1], positions[i][2], type
         );
         for (size_t other: bonded_to[i]) {
@@ -179,7 +180,7 @@ optional<uint64_t> TinkerFormat::forward() {
 
 // This is how tinker does it to check if there is unit cell information
 // in the file, so let's follow them here.
-bool is_unit_cell_line(string_view line) {
+bool is_unit_cell_line(std::string_view line) {
     static const char* LETTERS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
     return line.find_first_of(LETTERS) == std::string::npos;
 }
