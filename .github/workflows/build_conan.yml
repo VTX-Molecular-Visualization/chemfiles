@@ -1,0 +1,42 @@
+name: Build and Conan
+
+on:
+  push:
+    branches: [ "master" ]
+    paths: ['.']
+
+env:
+  CMAKELISTS_DIR: ${{github.workspace}}
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+      fail-fast: false
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        
+    - name: Get Conan
+      uses: turtlebrowser/get-conan@v1.2
+      
+    - name: Create default profile
+      run: conan profile detect
+      
+    - name: Add custom remote
+      run: |
+        conan remote add --insecure cano7782 ${{ secrets.CONAN_SERVER_HOST }}
+        conan remote login -p ${{ secrets.CONAN_SERVER_USER }} cano7782 ${{ secrets.CONAN_SERVER_PASSWORD }}
+           
+    - name: Create package
+      working-directory: ${{env.CMAKELISTS_DIR}}
+      run: conan create . --build=missing --settings=compiler.cppstd=20
+               
+#    - name: Upload dependencies
+#      working-directory: ${{env.CMAKELISTS_DIR}}
+#      run: |
+#        conan upload chmefiles -r=cano7782
