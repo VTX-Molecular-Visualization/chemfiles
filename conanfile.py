@@ -5,7 +5,7 @@ from conan.tools.scm import Git
 
 class ChemfilesRecipe(ConanFile):
     name = "chemfiles"
-    version = "1.0"
+    version = "0.10.4"
     package_type = "library"
     
     settings = "os", "compiler", "build_type", "arch"
