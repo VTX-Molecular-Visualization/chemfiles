@@ -38,4 +38,4 @@ jobs:
     - name: Upload dependencies
       working-directory: ${{env.CMAKELISTS_DIR}}
       run: |
-        conan upload chmefiles -r=cano7782
+        conan upload chemfiles -r=cano7782
