@@ -28,7 +28,7 @@ jobs:
            
     - name: Create package
       working-directory: ${{env.CMAKELISTS_DIR}}
-      run: conan create . --settings=compiler.cppstd=17
+      run: conan create . --settings=compiler.cppstd=20
                
     - name: Upload dependencies
       working-directory: ${{env.CMAKELISTS_DIR}}
