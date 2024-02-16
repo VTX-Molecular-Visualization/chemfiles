@@ -3,7 +3,7 @@ name: Build and Conan
 on:
   push:
     branches: [ "master" ]
-    paths: ['.']
+#    paths: ['.']
 
 env:
   CMAKELISTS_DIR: ${{github.workspace}}
