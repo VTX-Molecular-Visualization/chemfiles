@@ -28,11 +28,11 @@ jobs:
            
     - name: Create package
       working-directory: ${{env.CMAKELISTS_DIR}}
-      run: conan create . --build=missing --settings=compiler.cppstd=17
+      run: conan create .
                
     - name: Upload dependencies
       working-directory: ${{env.CMAKELISTS_DIR}}
       run: |
         conan remote add --insecure cano7782 ${{ secrets.CONAN_SERVER_HOST }}
         conan remote login -p ${{ secrets.CONAN_SERVER_USER }} cano7782 ${{ secrets.CONAN_SERVER_PASSWORD }}
-        conan upload chemfiles -r=cano7782 --force 
+        conan upload chemfiles -r=cano7782 --force
