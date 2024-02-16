@@ -2,7 +2,6 @@ import os
 from conan import ConanFile
 from conan.tools.cmake import CMake, cmake_layout
 from conan.tools.scm import Git
-from conan.tools.build import check_min_cppstd, check_max_cppstd
 
 class ChemfilesRecipe(ConanFile):
     name = "chemfiles"
@@ -21,10 +20,6 @@ class ChemfilesRecipe(ConanFile):
         if self.settings.os == "Windows":
             del self.options.fPIC
 
-    def validate(self):
-        check_min_cppstd(self, "17")
-        check_max_cppstd(self, "17")
-        
     def layout(self):
         cmake_layout(self)    
         # Add generated include dir for editable mode.
