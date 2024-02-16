@@ -25,11 +25,6 @@ jobs:
       
     - name: Create default profile
       run: conan profile detect
-      
-    - name: Add custom remote
-      run: |
-        conan remote add --insecure cano7782 ${{ secrets.CONAN_SERVER_HOST }}
-        conan remote login -p ${{ secrets.CONAN_SERVER_USER }} cano7782 ${{ secrets.CONAN_SERVER_PASSWORD }}
            
     - name: Create package
       working-directory: ${{env.CMAKELISTS_DIR}}
@@ -38,4 +33,6 @@ jobs:
     - name: Upload dependencies
       working-directory: ${{env.CMAKELISTS_DIR}}
       run: |
-        conan upload chemfiles -r=cano7782
+        conan remote add --insecure cano7782 ${{ secrets.CONAN_SERVER_HOST }}
+        conan remote login -p ${{ secrets.CONAN_SERVER_USER }} cano7782 ${{ secrets.CONAN_SERVER_PASSWORD }}
+        conan upload chemfiles -r=cano7782 --force 
