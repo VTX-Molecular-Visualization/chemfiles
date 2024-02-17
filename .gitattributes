@@ -1,2 +1,2 @@
-[auto]
-  crlf = false
+[core]
+	autocrlf = false
