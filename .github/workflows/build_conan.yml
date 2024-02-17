@@ -35,4 +35,4 @@ jobs:
       run: |
         conan remote add --insecure cano7782 ${{ secrets.CONAN_SERVER_HOST }}
         conan remote login -p ${{ secrets.CONAN_SERVER_PASSWORD }} cano7782 ${{ secrets.CONAN_SERVER_USER }}
-        conan upload chemfiles -r=cano7782 --force
+        conan upload chemfiles -r=cano7782
