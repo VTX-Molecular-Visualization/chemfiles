@@ -9,6 +9,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <string_view>
 
 #include "chemfiles/error_fmt.hpp"
 #include "chemfiles/external/optional.hpp"
@@ -54,11 +55,23 @@ template<> const FormatMetadata& chemfiles::format_metadata<mmCIFFormat>() {
 
 namespace {
 	/// CIF files store which digits are insignificant, we need to remove this
-	static double cif_to_double(std::string line)
-	{
-		line.erase(std::remove(line.begin(), line.end(), '('), line.end());
-		line.erase(std::remove(line.begin(), line.end(), ')'), line.end());
-		return parse<double>(line);
+	double cif_to_double(const std::string_view& line) {
+		// only allocate a new string if we actually find `(` somewhere, otherwise
+		// just parse it
+		std::string line_string;
+
+		auto open = std::find(line.begin(), line.end(), '(');
+		if (open != line.end()) {
+			line_string = std::string(line);
+			line_string.erase(std::remove(line_string.begin(), line_string.end(), '('), line_string.end());
+			line_string.erase(std::remove(line_string.begin(), line_string.end(), ')'), line_string.end());
+
+			return parse<double>(line_string);
+		}
+		else
+		{
+			return parse<double>(line);
+		}
 	}
 
 	// string_view in cpp 17 doesn't contains ends_with function. Reimplement it
@@ -122,22 +135,22 @@ void mmCIFFormat::init_() {
 		if (!in_loop)
 		{
 			if (line_split[0] == "_cell_length_a" || line_split[0] == "_cell.length_a") {
-				lengths[0] = cif_to_double(std::string(line_split[1]));
+				lengths[0] = cif_to_double(line_split[1]);
 			}
 			if (line_split[0] == "_cell_length_b" || line_split[0] == "_cell.length_b") {
-				lengths[1] = cif_to_double(std::string(line_split[1]));
+				lengths[1] = cif_to_double(line_split[1]);
 			}
 			if (line_split[0] == "_cell_length_c" || line_split[0] == "_cell.length_c") {
-				lengths[2] = cif_to_double(std::string(line_split[1]));
+				lengths[2] = cif_to_double(line_split[1]);
 			}
 			if (line_split[0] == "_cell_angle_alpha" || line_split[0] == "_cell.angle_alpha") {
-				angles[0] = cif_to_double(std::string(line_split[1]));
+				angles[0] = cif_to_double(line_split[1]);
 			}
 			if (line_split[0] == "_cell_angle_beta" || line_split[0] == "_cell.angle_beta") {
-				angles[1] = cif_to_double(std::string(line_split[1]));
+				angles[1] = cif_to_double(line_split[1]);
 			}
 			if (line_split[0] == "_cell_angle_gamma" || line_split[0] == "_cell.angle_gamma") {
-				angles[2] = cif_to_double(std::string(line_split[1]));
+				angles[2] = cif_to_double(line_split[1]);
 			}
 			if (line_split[0] == "_entry.id") {
 				pdb_idcode_ = std::string(line_split[1]);
@@ -556,12 +569,12 @@ void mmCIFFormat::read_atom_site(Frame& frame)
 
 		if (formal_charge != atom_site_map.end())
 		{
-			atom.set_charge(cif_to_double(std::string(line_split[formal_charge->second])));
+			atom.set_charge(cif_to_double(line_split[formal_charge->second]));
 		}
 
-		auto x = cif_to_double(std::string(line_split[cartn_x]));
-		auto y = cif_to_double(std::string(line_split[cartn_y]));
-		auto z = cif_to_double(std::string(line_split[cartn_z]));
+		auto x = cif_to_double(line_split[cartn_x]);
+		auto y = cif_to_double(line_split[cartn_y]);
+		auto z = cif_to_double(line_split[cartn_z]);
 		frame.add_atom(std::move(atom), Vector3D(x, y, z));
 
 
@@ -983,51 +996,51 @@ void mmCIFFormat::fill_assembly_operations()
 			}
 			else if (ends_with(line_split[0], ".matrix[1][1]"))
 			{
-				matrix_1_1_value = cif_to_double(std::string(line_split[1]));
+				matrix_1_1_value = cif_to_double(line_split[1]);
 			}
 			else if (ends_with(line_split[0], ".matrix[1][2]"))
 			{
-				matrix_1_2_value = cif_to_double(std::string(line_split[1]));
+				matrix_1_2_value = cif_to_double(line_split[1]);
 			}
 			else if (ends_with(line_split[0], ".matrix[1][3]"))
 			{
-				matrix_1_3_value = cif_to_double(std::string(line_split[1]));
+				matrix_1_3_value = cif_to_double(line_split[1]);
 			}
 			else if (ends_with(line_split[0], ".matrix[2][1]"))
 			{
-				matrix_2_1_value = cif_to_double(std::string(line_split[1]));
+				matrix_2_1_value = cif_to_double(line_split[1]);
 			}
 			else if (ends_with(line_split[0], ".matrix[2][2]"))
 			{
-				matrix_2_2_value = cif_to_double(std::string(line_split[1]));
+				matrix_2_2_value = cif_to_double(line_split[1]);
 			}
 			else if (ends_with(line_split[0], ".matrix[2][3]"))
 			{
-				matrix_2_3_value = cif_to_double(std::string(line_split[1]));
+				matrix_2_3_value = cif_to_double(line_split[1]);
 			}
 			else if (ends_with(line_split[0], ".matrix[3][1]"))
 			{
-				matrix_3_1_value = cif_to_double(std::string(line_split[1]));
+				matrix_3_1_value = cif_to_double(line_split[1]);
 			}
 			else if (ends_with(line_split[0], ".matrix[3][2]"))
 			{
-				matrix_3_2_value = cif_to_double(std::string(line_split[1]));
+				matrix_3_2_value = cif_to_double(line_split[1]);
 			}
 			else if (ends_with(line_split[0], ".matrix[3][3]"))
 			{
-				matrix_3_3_value = cif_to_double(std::string(line_split[1]));
+				matrix_3_3_value = cif_to_double(line_split[1]);
 			}
 			else if (ends_with(line_split[0], ".vector[1]"))
 			{
-				vector_x_value = cif_to_double(std::string(line_split[1]));
+				vector_x_value = cif_to_double(line_split[1]);
 			}
 			else if (ends_with(line_split[0], ".vector[2]"))
 			{
-				vector_y_value = cif_to_double(std::string(line_split[1]));
+				vector_y_value = cif_to_double(line_split[1]);
 			}
 			else if (ends_with(line_split[0], ".vector[3]"))
 			{
-				vector_z_value = cif_to_double(std::string(line_split[1]));
+				vector_z_value = cif_to_double(line_split[1]);
 			}
 		}
 
@@ -1047,13 +1060,13 @@ void mmCIFFormat::write(const Frame& frame) {
 		file_.print("# generated by Chemfiles\n");
 		file_.print("#\n");
 		auto lengths = frame.cell().lengths();
-		file_.print("_cell.length_a {}\n", lengths[0]);
-		file_.print("_cell.length_b {}\n", lengths[1]);
-		file_.print("_cell.length_c {}\n", lengths[2]);
+		file_.print("_cell.length_a {:#g}\n", lengths[0]);
+		file_.print("_cell.length_b {:#g}\n", lengths[1]);
+		file_.print("_cell.length_c {:#g}\n", lengths[2]);
 		auto angles = frame.cell().angles();
-		file_.print("_cell.length_alpha {}\n", angles[0]);
-		file_.print("_cell.length_beta  {}\n", angles[1]);
-		file_.print("_cell.length_gamma {}\n", angles[2]);
+		file_.print("_cell.length_alpha {:#g}\n", angles[0]);
+		file_.print("_cell.length_beta  {:#g}\n", angles[1]);
+		file_.print("_cell.length_gamma {:#g}\n", angles[2]);
 		file_.print("#\n");
 		file_.print("loop_\n");
 		file_.print("_atom_site.group_PDB\n");
@@ -1107,7 +1120,7 @@ void mmCIFFormat::write(const Frame& frame) {
 
 		const auto& atom = frame[i];
 
-		file_.print("{} {: <5} {: <2} {: <4} {} {: >3} {} {: >4} {:8.3f} {:8.3f} {:8.3f} {} {} {}\n",
+        file_.print("{} {: <5} {: <2} {: <4} {} {: >3} {} {: >4} {:8.3f} {:8.3f} {:8.3f} {:8.3f} {} {}\n",
 			pdbgroup, atoms_, atom.type(), atom.name(), ".", compid,
 			asymid, seq_id, positions[i][0], positions[i][1], positions[i][2],
 			atom.charge(), auth_asymid, models_
