@@ -131,7 +131,7 @@ endif()
 list(APPEND EXTERNAL_INCLUDES ${BZIP2_INCLUDE_DIR})
 
 # ==========
-# fmtlib: https://github.com/chemfiles/fmt
+# fmtlib: https://github.com/fmtlib/fmt v.10.2.1
 # ==========
 external_library(fmt)
 list(APPEND EXTERNAL_INCLUDES ${CMAKE_CURRENT_BINARY_DIR}/fmt/include/)
