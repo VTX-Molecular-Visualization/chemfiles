@@ -96,11 +96,11 @@ typedef struct CHFL_RESIDUE CHFL_RESIDUE;
 
 /// An opaque type handling a selection.
 ///
-/// `CHFL_SELECTION` allow to select atoms in a `CHFL_FRAME`, from a selection
-/// language. The selection language is built by combining basic operations.
-/// Each basic operation follows the `<selector>[(<variable>)] <operator>
-/// <value>` structure, where `<operator>` is a comparison operator in
-/// `== != < <= > >=`.
+/// `CHFL_SELECTION` allow to select atoms in a `CHFL_FRAME` using chemfiles
+/// selection language. The selection language is built by combining basic
+/// operations, following the `<selector>[(<variable>)] <operator>
+/// <value>` structure, where `<operator>` is a comparison operator in `== != <
+/// <= > >=`.
 typedef struct CHFL_SELECTION CHFL_SELECTION;
 
 /// This class holds the data used in properties in `CHFL_FRAME` and
@@ -128,8 +128,7 @@ typedef enum {  // NOLINT: this is both a C and C++ file
     CHFL_FORMAT_ERROR = 3,
     /// Status code for invalid selection strings.
     CHFL_SELECTION_ERROR = 4,
-    /// Status code for configuration files errors.
-    CHFL_CONFIGURATION_ERROR = 5,
+    /* error code 5 used to be CHFL_CONFIGURATION_ERROR */
     /// Status code for out of bounds errors.
     CHFL_OUT_OF_BOUNDS = 6,
     /// Status code for errors related to properties.

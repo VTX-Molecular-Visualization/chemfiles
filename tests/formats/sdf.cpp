@@ -204,7 +204,7 @@ $$$$
     frame.add_bond(0, 2, Bond::SINGLE);
     frame.add_bond(1, 2, Bond::DOUBLE);
     frame.add_bond(2, 3, Bond::TRIPLE);
-    frame.set("string-property", "prop1");
+    frame.set("string-property", Property("prop1"));
 
     auto file = Trajectory(tmpfile, 'w');
     file.write(frame);
