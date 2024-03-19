@@ -408,6 +408,17 @@ void mmCIFFormat::read_property_line(std::vector<std::string>& properties)
 			current++;
 			wordStart = current;
 		}
+		// previous block covers the case of a line finishing with a whitespace
+		// this block covers the case of a line finishing without a whitespace
+		else if (current == line.size() - 1)
+		{
+			if (wordStart != current)
+			{
+				properties.emplace_back(std::string(line.substr(wordStart, line.size() - 1)));
+			}
+			current++;
+			wordStart = current;
+		}
 		else
 		{
 			current++;
@@ -948,7 +959,7 @@ void mmCIFFormat::fill_assembly_operations()
 		{
 			read_item_properties(struct_oper_list, line_split);
 
-			if (line_split.size() < struct_oper_list_map.size())
+			if (line_split.size() != struct_oper_list_map.size())
 			{
 				throw format_error("_pdbx_struct_oper_list does not contains right number of properties ({} instead of {}) at position {} in '{}' ",
 					line_split.size(), struct_oper_list_map.size(), file_.tellpos(),
@@ -1194,16 +1205,25 @@ void mmCIFFormat::build_assembly_generators(const std::string& assembly_id,
 		auto firstTarget_str = operation_expression.substr(0, special_symbol_position);
 		auto secondTarget_str = operation_expression.substr(special_symbol_position + 1);
 
-		std::string firstTarget_string = std::string(firstTarget_str);
-		std::string secondTarget_string = std::string(secondTarget_str);
-
-		int firstTargetID = parse<int>(firstTarget_string);
-		int secondTargetID = parse<int>(secondTarget_string);
-
-		for (int i = firstTargetID; i <= secondTargetID; ++i)
+		size_t coma_symbol_position(0);
+		if ((coma_symbol_position = secondTarget_str.find(',')) != std::string::npos)
 		{
-			auto target_str = std::to_string(i);
-			build_assembly_generators(assembly_id, target_str, targets);
+			auto additionalTarget_str = secondTarget_str.substr(coma_symbol_position + 1);
+			build_assembly_generators(assembly_id, additionalTarget_str, targets);
+		}
+		else
+		{
+			std::string firstTarget_string = std::string(firstTarget_str);
+			std::string secondTarget_string = std::string(secondTarget_str);
+
+			int firstTargetID = parse<int>(firstTarget_string);
+			int secondTargetID = parse<int>(secondTarget_string);
+
+			for (int i = firstTargetID; i <= secondTargetID; ++i)
+			{
+				auto target_str = std::to_string(i);
+				build_assembly_generators(assembly_id, target_str, targets);
+			}
 		}
 	}
 	else if (operation_expression.find(',') != std::string::npos)
