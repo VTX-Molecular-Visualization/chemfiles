@@ -2,7 +2,7 @@ name: Build and Conan
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "master", "dev" ]
 
 env:
   CMAKELISTS_DIR: ${{github.workspace}}
@@ -36,6 +36,7 @@ jobs:
       run: conan create . --settings=compiler.cppstd=17
                
     - name: Upload dependencies
+      if: github.ref_name == 'master'
       working-directory: ${{env.CMAKELISTS_DIR}}
       run: |
         conan remote add --insecure cano7782 ${{ secrets.CONAN_SERVER_HOST }}
