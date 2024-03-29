@@ -3,8 +3,6 @@ name: Build and Conan
 on:
   push:
     branches: [ "master", "dev" ]
-  # configure manual trigger
-  workflow_dispatch:
 
 env:
   CMAKELISTS_DIR: ${{github.workspace}}
