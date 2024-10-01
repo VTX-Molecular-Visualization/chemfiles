@@ -105,10 +105,12 @@ namespace chemfiles {
 		Assembly assembly_;
 
 		void init_atom_site();
+		void init_chemical_conn_bond();
 		void addCategory(const std::string& category_name, bool is_loop);
 		void fill_loop_properties(const std::string& category_name, std::map<std::string, size_t>& property_map);
 
 		void read_atom_site(Frame& frame);
+		void read_chemical_conn_bond(Frame& frame);
 		void read_struct_oper_list(Frame& frame);
 
 		void read_inline_property(const std::vector<std::string_view>& line_split, std::string& data);

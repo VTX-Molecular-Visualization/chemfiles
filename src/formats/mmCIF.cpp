@@ -193,6 +193,13 @@ void mmCIFFormat::init_() {
 			if (line_split[0].find("_atom_site.") != std::string::npos) {
 				init_atom_site();
 			}
+			//if (line_split[0].find("_chemical_conn_bond.") != std::string::npos) {
+			//	init_chemical_conn_bond();
+			//}
+		}
+
+		if (line_split[0].find("_chemical_conn_bond.") != std::string::npos) {
+			addCategory("_chemical_conn_bond", in_loop);
 		}
 
 		// Can be in loop or not
@@ -212,6 +219,28 @@ void mmCIFFormat::init_() {
 	cell_ = UnitCell(lengths, angles);
 }
 
+void mmCIFFormat::init_chemical_conn_bond()
+{
+	auto& category = category_map_["_chemical_conn_bond"];
+	category.is_loop = true;
+
+	fill_loop_properties("_atom_site", category.property_map);
+
+	auto chemical_conn_bond_map = category.property_map;
+	category.position_data_start = reader_meta_data_.position;
+
+	steps_positions_.push_back(reader_meta_data_.position);
+
+	if (chemical_conn_bond_map.find("atom_1") == chemical_conn_bond_map.end())
+		throw format_error("could not find _chemical_conn_bond.atom_1 in '{}'", file_.path());
+	if (chemical_conn_bond_map.find("atom_2") == chemical_conn_bond_map.end())
+		throw format_error("could not find _chemical_conn_bond.atom_2 in '{}'", file_.path());
+	if (chemical_conn_bond_map.find("type") == chemical_conn_bond_map.end())
+		throw format_error("could not find _chemical_conn_bond.type in '{}'", file_.path());
+
+	auto line = file_.readline();
+	reader_meta_data_.line = line;
+}
 void mmCIFFormat::init_atom_site()
 {
 	auto& category = category_map_["_atom_site"];
@@ -456,8 +485,9 @@ void mmCIFFormat::read(Frame& frame) {
 	auto atom_site_map = category_map_["_atom_site"].property_map;
 	auto model_position = atom_site_map.find("pdbx_PDB_model_num");
 
+	read_chemical_conn_bond(frame);
 	// Only link if we are reading mmCIF
-	if (model_position != atom_site_map.end())
+	if (category_map_.find("_chemical_conn_bond") == category_map_.end() && model_position != atom_site_map.end())
 	{
 		// Cross format talk! Forgive me!
 		PDBFormat::link_standard_residue_bonds(frame);
@@ -472,6 +502,74 @@ void mmCIFFormat::read(Frame& frame) {
 	current_step_++;
 }
 
+void mmCIFFormat::read_chemical_conn_bond(Frame& frame)
+{
+	if (category_map_.find("_chemical_conn_bond") == category_map_.end())
+	{
+		assembly_.computed = true;
+		return;
+	}
+	auto mmcif_struct_chemical_conn_bond = category_map_["_chemical_conn_bond"];
+	file_.seekpos(mmcif_struct_chemical_conn_bond.position_data_start);
+	if (mmcif_struct_chemical_conn_bond.is_loop)
+	{
+		auto line = file_.readline();
+		do
+		{
+			auto line_split = split(line, ' ');
+			std::string_view atom_1;
+			std::string_view atom_2;
+			std::string_view bond_type;
+			if (line_split.size() == mmcif_struct_chemical_conn_bond.property_map.size()) // Single line data
+			{
+				atom_1 = line_split[mmcif_struct_chemical_conn_bond.property_map["atom_1"]];
+				atom_2 = line_split[mmcif_struct_chemical_conn_bond.property_map["atom_2"]];
+				bond_type = line_split[mmcif_struct_chemical_conn_bond.property_map["type"]];
+			}
+			// FIXME needs implementation
+			/*else // Multiple line data
+			{}*/
+
+			// FIXME needed?
+			// Clean possible quote around oper_expression
+			/*if (operation_expression.size() > 2 && operation_expression[0] == '\'' && operation_expression[operation_expression.size() - 1] == '\'')
+			{
+				operation_expression = operation_expression.substr(1, operation_expression.size() - 2);
+			}*/
+
+			frame.add_bond(parse<uint64_t>(atom_1) - 1, parse<uint64_t>(atom_2) - 1, Bond::UNKNOWN /* TODO Write proper bond conversion*/);
+			line = file_.readline();
+		} while (file_.tellpos() < mmcif_struct_chemical_conn_bond.position_data_end);
+	}
+	else
+	{
+		std::string atom_1;
+		std::string atom_2;
+		std::string bond_type;
+		auto line = file_.readline();
+		do
+		{
+			if (line.empty() || line[0] == '#')
+				break;
+			auto line_split = split(line, ' ');
+			if (line_split[0] == "mmcif_struct_chemical_conn_bond.atom_1")
+			{
+				read_inline_property(line_split, atom_1);
+			}
+			else if (line_split[0] == "mmcif_struct_chemical_conn_bond.atom_2")
+			{
+				read_inline_property(line_split, atom_2);
+			}
+			else if (line_split[0] == "mmcif_struct_chemical_conn_bond.type")
+			{
+				read_inline_property(line_split, bond_type);
+			}
+			line = file_.readline();
+		} while (file_.tellpos() < mmcif_struct_chemical_conn_bond.position_data_end);
+		frame.add_bond(parse<uint64_t>(atom_1) - 1, parse<uint64_t>(atom_2) - 1, Bond::UNKNOWN /* TODO Write proper bond conversion*/);
+	}
+	assembly_.computed = true;
+}
 void mmCIFFormat::read_atom_site(Frame& frame)
 { // The following map operations can be moved to the constructor
 	// and stored with optional. I don't know which solution is better.

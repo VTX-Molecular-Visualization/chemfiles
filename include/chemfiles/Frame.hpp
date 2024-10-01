@@ -322,6 +322,8 @@ public:
 		topology_.change_bond_order(atom_i, atom_j, bond_order);
 	}
 
+    inline bool has_bond() const { return topology_.bonds().empty() == false; }
+
     /// Get a reference to the atom at the position `index`.
     ///
     /// @example{frame/index.cpp}
