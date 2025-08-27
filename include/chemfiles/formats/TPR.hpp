@@ -4,7 +4,9 @@
 #ifndef CHEMFILES_TPR_FORMAT_HPP
 #define CHEMFILES_TPR_FORMAT_HPP
 
+#include <cstddef>
 #include <cstdint>
+
 #include <string>
 #include <vector>
 
@@ -26,9 +28,9 @@ class TPRFormat final : public Format {
   public:
     TPRFormat(std::string path, File::Mode mode, File::Compression compression);
 
-    void read_step(size_t step, Frame& frame) override;
+    void read_at(size_t index, Frame& frame) override;
     void read(Frame& frame) override;
-    size_t nsteps() override;
+    size_t size() override;
 
   private:
     // Since GROMACS 2020 (TPR version 119) the way the body is deserialized changes.
@@ -80,9 +82,7 @@ class TPRFormat final : public Format {
         TprBodyConvention body_convention = FileIOXdr;
 
         /// Size of real values in bytes
-        size_t sizeof_real() const {
-            return this->use_double ? sizeof(double) : sizeof(float);
-        }
+        size_t sizeof_real() const { return this->use_double ? sizeof(double) : sizeof(float); }
     };
 
     /// Read the file header
@@ -124,8 +124,8 @@ class TPRFormat final : public Format {
     XDRFile file_;
     /// TPR header of the file
     TprHeader header_;
-    /// The next step to read
-    size_t step_ = 0;
+    /// index of the next step to read
+    size_t index_ = 0;
 };
 
 template <> const FormatMetadata& format_metadata<TPRFormat>();

@@ -1,6 +1,24 @@
 // Chemfiles, a modern library for chemistry file reading and writing
 // Copyright (C) Guillaume Fraux and contributors -- BSD license
 
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cassert>
+
+#include <map>
+#include <array>
+#include <string>
+#include <vector>
+#include <string_view>
+
+#include "chemfiles/types.hpp"
+#include "chemfiles/utils.hpp"
+#include "chemfiles/parse.hpp"
+#include "chemfiles/warnings.hpp"
+#include "chemfiles/error_fmt.hpp"
+#include "chemfiles/external/optional.hpp"
+
 #include "chemfiles/formats/GRO.hpp"
 #include "chemfiles/Atom.hpp"
 #include "chemfiles/File.hpp"
@@ -27,8 +45,8 @@
 
 using namespace chemfiles;
 
-template<>
-const FormatMetadata& chemfiles::format_metadata<GROFormat>()
+template <>
+const FormatMetadata &chemfiles::format_metadata<GROFormat>()
 {
 	static FormatMetadata metadata;
 	metadata.name = "GRO";
@@ -49,16 +67,16 @@ const FormatMetadata& chemfiles::format_metadata<GROFormat>()
 	return metadata;
 }
 
-using chemfiles::private_details::is_upper_triangular;
+using chemfiles::details::is_lower_triangular;
 
 /// Check the number of digits before the decimal separator to be sure than
 /// we can represent them. In case of error, use the given `context` in the error
 /// message
-static void check_values_size(const Vector3D& values, unsigned width, const std::string& context);
+static void check_values_size(const Vector3D &values, unsigned width, const std::string &context);
 
 const int64_t GROFormat::GRO_INDEX_MAX = 99999;
 
-void GROFormat::read_next(Frame& frame)
+void GROFormat::read_next(Frame &frame)
 {
 	// GRO comment line is used as frame name
 	auto frame_name = trim(file_.readline());
@@ -72,7 +90,7 @@ void GROFormat::read_next(Frame& frame)
 	{
 		natoms = parse<size_t>(file_.readline());
 	}
-	catch (const Error& e)
+	catch (const Error &e)
 	{
 		throw format_error("can not read number of atoms in GRO file: {}", e.what());
 	}
@@ -80,10 +98,10 @@ void GROFormat::read_next(Frame& frame)
 	frame.add_velocities();
 	frame.reserve(natoms);
 
-	int64_t			  previousResidueIndexRead = -1;
-	int64_t			  residIndexOffset = 0;
-	int				  chainIndex = 0;
-	std::string		  chainName = get_chain_name_from_index(chainIndex);
+	int64_t previousResidueIndexRead = -1;
+	int64_t residIndexOffset = 0;
+	int chainIndex = 0;
+	std::string chainName = get_chain_name_from_index(chainIndex);
 	optional<Residue> currentResidue = nullopt;
 
 	for (size_t i = 0; i < natoms; i++)
@@ -99,7 +117,7 @@ void GROFormat::read_next(Frame& frame)
 		{
 			resid = parse<int64_t>(line.substr(0, 5));
 		}
-		catch (const Error&)
+		catch (const Error &)
 		{
 			// Invalid residue, we'll skip it
 			warning("GRO Reader", "skiping invalid residue with resid '{}'", line.substr(0, 5));
@@ -113,14 +131,16 @@ void GROFormat::read_next(Frame& frame)
 		auto y = parse<double>(line.substr(28, 8)) * 10;
 		auto z = parse<double>(line.substr(36, 8)) * 10;
 
-		double vx = 0, vy = 0, vz = 0;
+		double vx = 0;
+		double vy = 0;
+		double vz = 0;
 		if (line.length() >= 68)
 		{
 			vx = parse<double>(line.substr(44, 8)) * 10;
 			vy = parse<double>(line.substr(52, 8)) * 10;
 			vz = parse<double>(line.substr(60, 8)) * 10;
 		}
-		frame.add_atom(Atom(name), { x, y, z }, { vx, vy, vz });
+		frame.add_atom(Atom(name), {x, y, z}, {vx, vy, vz});
 
 		if (!resid)
 		{
@@ -170,10 +190,10 @@ void GROFormat::read_next(Frame& frame)
 	if (box_values.size() == 3)
 	{
 		auto lengths = Vector3D(parse<double>(box_values[0]) * 10,
-			parse<double>(box_values[1]) * 10,
-			parse<double>(box_values[2]) * 10);
+								parse<double>(box_values[1]) * 10,
+								parse<double>(box_values[2]) * 10);
 
-		frame.set_cell({ lengths });
+		frame.set_cell({lengths});
 	}
 	else if (box_values.size() == 9)
 	{
@@ -191,8 +211,15 @@ void GROFormat::read_next(Frame& frame)
 		auto v3_x = parse<double>(box_values[7]) * 10;
 		auto v3_y = parse<double>(box_values[8]) * 10;
 
-		auto cell = UnitCell({ v1_x, v2_x, v3_x, 0.00, v2_y, v3_y, 0.00, 0.00, v3_z });
+		auto cell = UnitCell({v1_x, 0.00, 0.00,
+							  v2_x, v2_y, 0.00,
+							  v3_x, v3_y, v3_z});
 		frame.set_cell(cell);
+	}
+
+	for (auto &residue : residues_)
+	{
+		frame.add_residue(residue.second);
 	}
 }
 
@@ -236,7 +263,7 @@ static std::string to_gro_index(uint64_t i)
 	}
 }
 
-void GROFormat::write_next(const Frame& frame)
+void GROFormat::write_next(const Frame &frame)
 {
 	file_.print("{}\n", frame.get<Property::STRING>("name").value_or("GRO File produced by chemfiles"));
 	file_.print("{: >5d}\n", frame.size());
@@ -245,7 +272,7 @@ void GROFormat::write_next(const Frame& frame)
 	// atoms without associated residue, and start generated residue id at
 	// 1
 	int64_t max_resid = 1;
-	for (const auto& residue : frame.topology().residues())
+	for (const auto &residue : frame.topology().residues())
 	{
 		auto resid = residue.id();
 		if (resid && resid.value() > max_resid)
@@ -254,18 +281,20 @@ void GROFormat::write_next(const Frame& frame)
 		}
 	}
 
-	auto& positions = frame.positions();
+	const auto &positions = frame.positions();
 	for (size_t i = 0; i < frame.size(); i++)
 	{
 		std::string resname = "XXXXX";
 		std::string resid = "-1";
-		auto		residue = frame.topology().residue_for_atom(i);
+		auto residue = frame.topology().residue_for_atom(i);
 		if (residue)
 		{
 			resname = residue->name();
 			if (resname.length() > 5)
 			{
-				warning("GRO writer", "residue '{}' name is too long, it will be truncated", resname);
+				warning("GRO writer",
+						"residue '{}' name is too long, it will be truncated",
+						resname);
 				resname = resname.substr(0, 5);
 			}
 		}
@@ -311,31 +340,31 @@ void GROFormat::write_next(const Frame& frame)
 			auto vel = (*frame.velocities())[i] / 10;
 			check_values_size(vel, 8, "atomic velocity");
 			file_.print("{: >5}{: <5}{: >5}{: >5}{:8.3f}{:8.3f}{:8.3f}{:8.4f}{:8.4f}{:8.4f}\n",
-				resid,
-				resname,
-				frame[i].name(),
-				to_gro_index(i),
-				pos[0],
-				pos[1],
-				pos[2],
-				vel[0],
-				vel[1],
-				vel[2]);
+						resid,
+						resname,
+						frame[i].name(),
+						to_gro_index(i),
+						pos[0],
+						pos[1],
+						pos[2],
+						vel[0],
+						vel[1],
+						vel[2]);
 		}
 		else
 		{
 			file_.print("{: >5}{: <5}{: >5}{: >5}{:8.3f}{:8.3f}{:8.3f}\n",
-				resid,
-				resname,
-				frame[i].name(),
-				to_gro_index(i),
-				pos[0],
-				pos[1],
-				pos[2]);
+						resid,
+						resname,
+						frame[i].name(),
+						to_gro_index(i),
+						pos[0],
+						pos[1],
+						pos[2]);
 		}
 	}
 
-	const auto& cell = frame.cell();
+	const auto &cell = frame.cell();
 	// While this line is free form, we should try to print it in a pretty way that most gro parsers expect
 	// This means we cannot support incredibly large cell sizes, but these are likely not practical anyway
 	if (cell.shape() == UnitCell::ORTHORHOMBIC || cell.shape() == UnitCell::INFINITE)
@@ -347,29 +376,24 @@ void GROFormat::write_next(const Frame& frame)
 	}
 	else
 	{ // Triclinic
-		const auto& matrix = cell.matrix() / 10;
-		if (!is_upper_triangular(matrix))
+		const auto &matrix = cell.matrix() / 10;
+		if (!is_lower_triangular(matrix))
 		{
-			throw format_error("unsupported triclinic but non upper-triangular cell matrix in GRO writer");
+			throw format_error("unsupported triclinic but non lower-triangular cell matrix in GRO writer");
 		}
 		check_values_size(Vector3D(matrix[0][0], matrix[1][1], matrix[2][2]), 8, "unit cell");
-		check_values_size(Vector3D(matrix[0][1], matrix[0][2], matrix[1][2]), 8, "unit cell");
-		file_.print("   {:8.5f} {:8.5f} {:8.5f} 0.0 0.0 {:8.5f} 0.0 {:8.5f} {:8.5f}\n",
-			matrix[0][0],
-			matrix[1][1],
-			matrix[2][2],
-			matrix[0][1],
-			matrix[0][2],
-			matrix[1][2]);
+		check_values_size(Vector3D(matrix[1][0], matrix[2][0], matrix[2][1]), 8, "unit cell");
+		file_.print(
+			"   {:8.5f} {:8.5f} {:8.5f} 0.0 0.0 {:8.5f} 0.0 {:8.5f} {:8.5f}\n",
+			matrix[0][0], matrix[1][1], matrix[2][2], matrix[1][0], matrix[2][0], matrix[2][1]);
 	}
 }
 
-void check_values_size(const Vector3D& values, unsigned width, const std::string& context)
+void check_values_size(const Vector3D &values, unsigned width, const std::string &context)
 {
 	double max_pos = std::pow(10.0, width) - 1;
 	double max_neg = -std::pow(10.0, width - 1) + 1;
-	if (values[0] > max_pos || values[1] > max_pos || values[2] > max_pos || values[0] < max_neg
-		|| values[1] < max_neg || values[2] < max_neg)
+	if (values[0] > max_pos || values[1] > max_pos || values[2] > max_pos || values[0] < max_neg || values[1] < max_neg || values[2] < max_neg)
 	{
 		throw format_error("value in {} is too big for representation in GRO format", context);
 	}
@@ -377,7 +401,7 @@ void check_values_size(const Vector3D& values, unsigned width, const std::string
 
 optional<uint64_t> GROFormat::forward()
 {
-	auto   position = file_.tellpos();
+	auto position = file_.tellpos();
 	size_t n_atoms = 0;
 
 	// Skip the comment line
@@ -393,7 +417,7 @@ optional<uint64_t> GROFormat::forward()
 	{
 		n_atoms = parse<size_t>(line);
 	}
-	catch (const Error&)
+	catch (const Error &)
 	{
 		throw format_error("could not read the number of atoms for GRO format: the line is '{}'", line);
 	}

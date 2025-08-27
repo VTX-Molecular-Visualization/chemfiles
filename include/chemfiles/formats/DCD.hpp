@@ -4,10 +4,16 @@
 #ifndef CHEMFILES_FORMAT_DCD_HPP
 #define CHEMFILES_FORMAT_DCD_HPP
 
+#include <cstddef>
+#include <cstdint>
+
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "chemfiles/File.hpp"
 #include "chemfiles/Format.hpp"
+#include "chemfiles/types.hpp"
 
 #include "chemfiles/files/BinaryFile.hpp"
 
@@ -48,17 +54,16 @@ class FormatMetadata;
 /// When writing, this format uses a native endianess file, always outputs the
 /// unit cell (infinite unit cells being represented with 0), and uses a 3D
 /// format without any fixed atoms.
-class DCDFormat: public Format {
+class DCDFormat final: public Format {
 public:
     DCDFormat(std::string path, File::Mode mode, File::Compression compression);
 
-    size_t nsteps() override final;
-    void read(Frame& frame) override final;
-    void read_step(size_t step, Frame& frame) override final;
+    size_t size() override;
+    void read(Frame& frame) override;
+    void read_at(size_t index, Frame& frame) override;
     void write(const Frame& frame) override;
 
 private:
-
 
     /****** low-level function to read fortran unformatted binary files ******/
     // read a single record size marker from the file. Each record (single
@@ -138,8 +143,8 @@ private:
     /// title of the file
     std::string title_;
 
-    /// next step to read
-    size_t step_ = 0;
+    /// index of the next step to read
+    size_t index_ = 0;
 
     /// temporary buffer used when reading/writing coordinates
     std::vector<float> buffer_;

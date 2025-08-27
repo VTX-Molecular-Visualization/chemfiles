@@ -14,12 +14,14 @@
 #include <cstdio>
 #include <cstdint>
 
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
 #include <memory>
 #include <utility>
 
+#include "chemfiles/File.hpp"
 #include "chemfiles/external/optional.hpp"
 #include "chemfiles/files/BinaryFile.hpp"
 
@@ -89,11 +91,11 @@ public:
         }
     }
 
-    Value(Value&& other): Value(0) {
+    Value(Value&& other) noexcept: Value(0) {
         *this = std::move(other);
     }
 
-    Value& operator=(Value&& other);
+    Value& operator=(Value&& other) noexcept;
 
     Value(const Value& other): Value(0) {
         *this = other;
@@ -383,6 +385,8 @@ private:
     /// read the header for all variables
     void read_variables();
 
+    /// whether the file uses 32 or 64-bi variables in the headerr
+    bool use_64bit_header_ = false;
     /// current number of records in the file
     uint64_t n_records_ = 0;
     /// size in bytes of a full record entry, including all record variables

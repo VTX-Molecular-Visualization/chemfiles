@@ -4,8 +4,10 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstdint>
+
 #include <array>
 #include <string>
+#include <utility>
 #include <vector>
 #include <cassert>
 
@@ -22,6 +24,7 @@
 #include "chemfiles/Residue.hpp"
 #include "chemfiles/Topology.hpp"
 #include "chemfiles/UnitCell.hpp"
+#include "chemfiles/Format.hpp"
 #include "chemfiles/FormatMetadata.hpp"
 
 #include "chemfiles/files/TNGFile.hpp"
@@ -88,9 +91,9 @@ TNGFormat::TNGFormat(std::string path, File::Mode mode, File::Compression compre
 
     // work around a bug in tng_num_frames_get (https://redmine.gromacs.org/issues/2937)
     // manually query all frames in the trajectory, and get the corresponding
-    // TNG frame number in tng_steps_
-    int64_t current_frame = -1;
-    int64_t next_frame = 0;
+    // TNG frame number in simulation_steps_
+    int64_t current_step = -1;
+    int64_t next_step = 0;
     int64_t unused = 0;
     int64_t* buffer = nullptr;
 
@@ -99,12 +102,12 @@ TNGFormat::TNGFormat(std::string path, File::Mode mode, File::Compression compre
         // Look for all frames with at least position data
         int64_t block_ids[] = {TNG_TRAJ_POSITIONS};
         status = tng_util_trajectory_next_frame_present_data_blocks_find(
-            tng_, current_frame, 1, block_ids, &next_frame, &unused, &buffer
+            tng_, current_step, 1, block_ids, &next_step, &unused, &buffer
         );
 
         if (status == TNG_SUCCESS) {
-            current_frame = next_frame;
-            tng_steps_.push_back(current_frame);
+            current_step = next_step;
+            simulation_steps_.push_back(current_step);
         } else if (status == TNG_FAILURE) {
             // We found the end of the file
             break;
@@ -117,17 +120,17 @@ TNGFormat::TNGFormat(std::string path, File::Mode mode, File::Compression compre
     free(buffer);
 }
 
-size_t TNGFormat::nsteps() {
-    return tng_steps_.size();
+size_t TNGFormat::size() {
+    return simulation_steps_.size();
 }
 
-void TNGFormat::read_step(size_t step, Frame& frame) {
-    step_ = step;
+void TNGFormat::read_at(size_t index, Frame& frame) {
+    index_ = index;
     read(frame);
 }
 
 void TNGFormat::read(Frame& frame) {
-    frame.set_step(static_cast<size_t>(tng_steps_[step_]));
+    frame.set("simulation_step", simulation_steps_[index_]);
     natoms_ = 0;
     CHECK(tng_num_particles_get(tng_, &natoms_));
     assert(natoms_ > 0);
@@ -135,7 +138,7 @@ void TNGFormat::read(Frame& frame) {
 
     double time = 0;
     tng_function_status status =
-        tng_util_time_of_frame_get(tng_, tng_steps_[step_], &time);
+        tng_util_time_of_frame_get(tng_, simulation_steps_[index_], &time);
     if (status == TNG_SUCCESS) {
         // TNG stores time in seconds
         // convert to pico seconds
@@ -147,7 +150,7 @@ void TNGFormat::read(Frame& frame) {
     read_cell(frame);
     read_topology(frame);
 
-    step_++;
+    index_++;
 }
 
 void TNGFormat::read_positions(Frame& frame) {
@@ -155,7 +158,7 @@ void TNGFormat::read_positions(Frame& frame) {
     int64_t unused = 0;
 
     CHECK(tng_util_pos_read_range(
-        tng_, tng_steps_[step_], tng_steps_[step_], buffer.ptr(), &unused
+        tng_, simulation_steps_[index_], simulation_steps_[index_], buffer.ptr(), &unused
     ));
 
     auto positions = frame.positions();
@@ -171,7 +174,7 @@ void TNGFormat::read_velocities(Frame& frame) {
     int64_t unused = 0;
 
     auto status = tng_util_vel_read_range(
-        tng_, tng_steps_[step_], tng_steps_[step_], buffer.ptr(), &unused
+        tng_, simulation_steps_[index_], simulation_steps_[index_], buffer.ptr(), &unused
     );
 
     switch (status) {
@@ -184,6 +187,10 @@ void TNGFormat::read_velocities(Frame& frame) {
     case TNG_CRITICAL:
         throw format_error(
             "fatal error in the TNG library while calling 'tng_util_vel_read_range'"
+        );
+    default:
+        throw format_error(
+            "unknown error in the TNG library while calling 'tng_util_vel_read_range'"
         );
     }
 
@@ -201,7 +208,7 @@ void TNGFormat::read_cell(Frame& frame) {
     int64_t unused = 0;
 
     auto status = tng_util_box_shape_read_range(
-        tng_, tng_steps_[step_], tng_steps_[step_], buffer.ptr(), &unused
+        tng_, simulation_steps_[index_], simulation_steps_[index_], buffer.ptr(), &unused
     );
 
     switch (status) {
@@ -216,12 +223,16 @@ void TNGFormat::read_cell(Frame& frame) {
         throw format_error(
             "fatal error in the TNG library while calling 'tng_util_box_shape_read_range'"
         );
+    default:
+        throw format_error(
+            "unknown error in the TNG library while calling 'tng_util_box_shape_read_range'"
+        );
     }
 
     auto matrix = distance_scale_factor_ * Matrix3D(
-        static_cast<double>(buffer[0]), static_cast<double>(buffer[3]), static_cast<double>(buffer[6]),
-        static_cast<double>(buffer[1]), static_cast<double>(buffer[4]), static_cast<double>(buffer[7]),
-        static_cast<double>(buffer[2]), static_cast<double>(buffer[5]), static_cast<double>(buffer[8])
+        static_cast<double>(buffer[0]), static_cast<double>(buffer[1]), static_cast<double>(buffer[2]),
+        static_cast<double>(buffer[3]), static_cast<double>(buffer[4]), static_cast<double>(buffer[5]),
+        static_cast<double>(buffer[6]), static_cast<double>(buffer[7]), static_cast<double>(buffer[8])
     );
 
     frame.set_cell(UnitCell(matrix));

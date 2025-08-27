@@ -4,11 +4,14 @@
 #ifndef CHEMFILES_FORMAT_MMCIF_HPP
 #define CHEMFILES_FORMAT_MMCIF_HPP
 
+#include <cstddef>
 #include <cstdint>
+
 #include <map>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 #include <set>
 
@@ -20,14 +23,16 @@
 #include "chemfiles/Residue.hpp"
 #include "chemfiles/UnitCell.hpp"
 
-namespace chemfiles {
+namespace chemfiles
+{
 	class Frame;
 	class MemoryBuffer;
 	class FormatMetadata;
 
 	/// mmCIF Crystallographic Information Framework for MacroMolecules
 	/// reader and writer.
-	class mmCIFFormat final : public Format {
+	class mmCIFFormat final : public Format
+	{
 
 	private:
 		class ReaderMetaData
@@ -50,11 +55,10 @@ namespace chemfiles {
 		{
 		public:
 			AssemblyOperation() : AssemblyOperation(Vector3D(0, 0, 0), Matrix3D(1, 0, 0, 0, 1, 0, 0, 0, 1))
-			{}
+			{
+			}
 
-			AssemblyOperation(const Vector3D& _translation, const Matrix3D& _rotation) :
-				translation(_translation), rotation(_rotation)
-			{};
+			AssemblyOperation(const Vector3D &_translation, const Matrix3D &_rotation) : translation(_translation), rotation(_rotation) {};
 
 			Vector3D translation;
 			Matrix3D rotation;
@@ -78,20 +82,20 @@ namespace chemfiles {
 		};
 
 	public:
-		mmCIFFormat(std::string path, File::Mode mode, File::Compression compression) :
-			file_(std::move(path), mode, compression), models_(0), atoms_(0) {
+		mmCIFFormat(std::string path, File::Mode mode, File::Compression compression) : file_(std::move(path), mode, compression), models_(0), atoms_(0)
+		{
 			init_();
 		}
 
-		mmCIFFormat(std::shared_ptr<MemoryBuffer> memory, File::Mode mode, File::Compression compression) :
-			file_(std::move(memory), mode, compression), models_(0), atoms_(0) {
+		mmCIFFormat(std::shared_ptr<MemoryBuffer> memory, File::Mode mode, File::Compression compression) : file_(std::move(memory), mode, compression), models_(0), atoms_(0)
+		{
 			init_();
 		}
 
-		void read_step(size_t step, Frame& frame) override;
-		void read(Frame& frame) override;
-		void write(const Frame& frame) override;
-		size_t nsteps() override;
+		void read_at(size_t index, Frame &frame) override;
+		void read(Frame &frame) override;
+		void write(const Frame &frame) override;
+		size_t size() override;
 
 	private:
 		/// Initialize important variables
@@ -106,22 +110,22 @@ namespace chemfiles {
 
 		void init_atom_site();
 		void init_chemical_conn_bond();
-		void addCategory(const std::string& category_name, bool is_loop);
-		void fill_loop_properties(const std::string& category_name, std::map<std::string, size_t>& property_map);
+		void addCategory(const std::string &category_name, bool is_loop);
+		void fill_loop_properties(const std::string &category_name, std::map<std::string, size_t> &property_map);
 
-		void read_atom_site(Frame& frame);
-		void read_chemical_conn_bond(Frame& frame);
-		void read_struct_oper_list(Frame& frame);
+		void read_atom_site(Frame &frame);
+		void read_chemical_conn_bond(Frame &frame);
+		void read_struct_oper_list(Frame &frame);
 
-		void read_inline_property(const std::vector<std::string_view>& line_split, std::string& data);
-		void read_item_properties(const mmCIFCategoryHeader& header, std::vector<std::string>& property);
-		void read_property_line(std::vector<std::string>& properties);
+		void read_inline_property(const std::vector<std::string_view> &line_split, std::string &data);
+		void read_item_properties(const mmCIFCategoryHeader &header, std::vector<std::string> &property);
+		void read_property_line(std::vector<std::string> &properties);
 		void fill_assembly();
 		void fill_assembly_operations();
-		void fill_assembly_targets_vector(const std::string_view& targets_str, std::set<std::string>& targets);
-		void build_assembly_generators(const std::string& assembly_id, const std::string_view& operation_expression, const std::set<std::string>& targets);
+		void fill_assembly_targets_vector(const std::string_view &targets_str, std::set<std::string> &targets);
+		void build_assembly_generators(const std::string &assembly_id, const std::string_view &operation_expression, const std::set<std::string> &targets);
 
-		void apply_symmetry(Frame& frame, const std::string& assembly_id);
+		void apply_symmetry(Frame &frame, const std::string &assembly_id);
 
 		/// Map of STAR records to their index
 		std::map<std::string, size_t> atom_site_map_;
@@ -131,7 +135,7 @@ namespace chemfiles {
 		std::map<std::pair<std::string, int64_t>, size_t> map_residues_indexes;
 		/// Storing the positions of all the steps in the file, so that we can
 		/// just `seekpos` them instead of reading the whole step.
-		std::vector<uint64_t> steps_positions_;
+		std::vector<uint64_t> frame_positions_;
 		/// The cell for all frames
 		UnitCell cell_;
 		/// Number of models written to the file.
@@ -151,7 +155,8 @@ namespace chemfiles {
 		std::string read_multi_line();
 	};
 
-	template<> const FormatMetadata& format_metadata<mmCIFFormat>();
+	template <>
+	const FormatMetadata &format_metadata<mmCIFFormat>();
 
 } // namespace chemfiles
 

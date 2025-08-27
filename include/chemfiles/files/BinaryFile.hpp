@@ -1,25 +1,21 @@
 #ifndef CHEMFILES_BINARY_FILE
 #define CHEMFILES_BINARY_FILE
 
+#include <cstddef>
 #include <cstdint>
+
 #include <memory>
 #include <string>
-#include <type_traits>
+#include <utility>
 #include <vector>
 
-#include "chemfiles/config.h"
 #include "chemfiles/File.hpp"
 
 static_assert(sizeof(char) == sizeof(int8_t), "char must be 8-bits");
 
 #if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
-#if (CHEMFILES_SIZEOF_VOID_P == 8)
-    // use mmap in 64-bit posix
+    // use mmap on posix
     #define CHEMFILES_BINARY_FILE_USE_MMAP 1
-#else
-    // otherwise fallback to an implementation using only <cstdio>
-    #define CHEMFILES_BINARY_FILE_USE_MMAP 0
-#endif
 #else
     #define CHEMFILES_BINARY_FILE_USE_MMAP 0
 #endif
@@ -204,7 +200,7 @@ public:
     /// file
     void write_char(const char* data, size_t count);
     /// Write all char from the pre-allocated vector
-    void write_char(const std::vector<char> data) {
+    void write_char(const std::vector<char>& data) {
         this->write_char(data.data(), data.size());
     }
     /// Write a single char value to the file
@@ -218,7 +214,7 @@ public:
         this->write_char(reinterpret_cast<const char*>(data), count);
     }
     /// Write all 8-bit signed integers from the pre-allocated vector
-    void write_i8(const std::vector<int8_t> data) {
+    void write_i8(const std::vector<int8_t>& data) {
         this->write_i8(data.data(), data.size());
     }
     /// Write a single 8-bit signed integer to the file
@@ -232,7 +228,7 @@ public:
         this->write_char(reinterpret_cast<const char*>(data), count);
     }
     /// Write all 8-bit unsigned integers from the pre-allocated vector
-    void write_u8(const std::vector<uint8_t> data) {
+    void write_u8(const std::vector<uint8_t>& data) {
         this->write_u8(data.data(), data.size());
     }
     /// Write a single 8-bit unsigned integer to the file
@@ -244,7 +240,7 @@ public:
     /// array to the file
     virtual void write_i16(const int16_t* data, size_t count) = 0;
     /// Write all 16-bit signed integers from the pre-allocated vector
-    void write_i16(const std::vector<int16_t> data) {
+    void write_i16(const std::vector<int16_t>& data) {
         this->write_i16(data.data(), data.size());
     }
     /// Write a single 16-bit signed integer to the file
@@ -256,7 +252,7 @@ public:
     /// array to the file
     virtual void write_u16(const uint16_t* data, size_t count) = 0;
     /// Write all 16-bit unsigned integers from the pre-allocated vector
-    void write_u16(const std::vector<uint16_t> data) {
+    void write_u16(const std::vector<uint16_t>& data) {
         this->write_u16(data.data(), data.size());
     }
     /// Write a single 16-bit unsigned integer to the file
@@ -268,7 +264,7 @@ public:
     /// array to the file
     virtual void write_i32(const int32_t* data, size_t count) = 0;
     /// Write all 32-bit signed integers from the pre-allocated vector
-    void write_i32(const std::vector<int32_t> data) {
+    void write_i32(const std::vector<int32_t>& data) {
         this->write_i32(data.data(), data.size());
     }
     /// Write a single 32-bit signed integer to the file
@@ -280,7 +276,7 @@ public:
     /// array to the file
     virtual void write_u32(const uint32_t* data, size_t count) = 0;
     /// Write all 32-bit unsigned integers from the pre-allocated vector
-    void write_u32(const std::vector<uint32_t> data) {
+    void write_u32(const std::vector<uint32_t>& data) {
         this->write_u32(data.data(), data.size());
     }
     /// Write a single 32-bit unsigned integer to the file
@@ -292,7 +288,7 @@ public:
     /// array to the file
     virtual void write_i64(const int64_t* data, size_t count) = 0;
     /// Write all 64-bit signed integers from the pre-allocated vector
-    void write_i64(const std::vector<int64_t> data) {
+    void write_i64(const std::vector<int64_t>& data) {
         this->write_i64(data.data(), data.size());
     }
     /// Write a single 64-bit signed integer to the file
@@ -304,7 +300,7 @@ public:
     /// array to the file
     virtual void write_u64(const uint64_t* data, size_t count) = 0;
     /// Write all 64-bit unsigned integers from the pre-allocated vector
-    void write_u64(const std::vector<uint64_t> data) {
+    void write_u64(const std::vector<uint64_t>& data) {
         this->write_u64(data.data(), data.size());
     }
     /// Write a single 64-bit unsigned integer to the file
@@ -316,7 +312,7 @@ public:
     /// `data` array to the file
     virtual void write_f32(const float* data, size_t count) = 0;
     /// Write all 32-bit floating point numbers from the pre-allocated vector
-    void write_f32(const std::vector<float> data) {
+    void write_f32(const std::vector<float>& data) {
         this->write_f32(data.data(), data.size());
     }
     /// Write a single 32-bit floating point number to the file
@@ -328,7 +324,7 @@ public:
     /// `data` array to the file
     virtual void write_f64(const double* data, size_t count) = 0;
     /// Write all 64-bit floating point numbers from the pre-allocated vector
-    void write_f64(const std::vector<double> data) {
+    void write_f64(const std::vector<double>& data) {
         this->write_f64(data.data(), data.size());
     }
     /// Write a single 64-bit floating point number to the file
@@ -344,14 +340,19 @@ private:
     /// destructor and move assignment operator
     void close_file() noexcept;
 
+    /// When in mmap mode, sync, unmap and then remap the file starting at
+    /// `mmap_offset_`
+    void remap_file();
+
 #if CHEMFILES_BINARY_FILE_USE_MMAP
     int file_descriptor_ = -1;
     char* mmap_data_ = nullptr;
     size_t file_size_ = 0;
-    size_t mmap_size_ = 0;
+    uint64_t mmap_offset_ = 0;
+    // size_t mmap_size_ = 0;
     int mmap_prot_ = 0;
     size_t page_size_ = 0;
-    uint64_t offset_ = 0;
+    uint64_t current_ = 0;
     uint64_t total_written_size_ = 0;
 #else
     FILE* file_ = nullptr;
@@ -370,23 +371,23 @@ public:
     BigEndianFile(BigEndianFile&&) noexcept = default;
     BigEndianFile& operator=(BigEndianFile&&) noexcept = default;
 
-    void read_i16(int16_t* data, size_t count) final override;
-    void read_u16(uint16_t* data, size_t count) final override;
-    void read_i32(int32_t* data, size_t count) final override;
-    void read_u32(uint32_t* data, size_t count) final override;
-    void read_i64(int64_t* data, size_t count) final override;
-    void read_u64(uint64_t* data, size_t count) final override;
-    void read_f32(float* data, size_t count) final override;
-    void read_f64(double* data, size_t count) final override;
+    void read_i16(int16_t* data, size_t count) final;
+    void read_u16(uint16_t* data, size_t count) final;
+    void read_i32(int32_t* data, size_t count) final;
+    void read_u32(uint32_t* data, size_t count) final;
+    void read_i64(int64_t* data, size_t count) final;
+    void read_u64(uint64_t* data, size_t count) final;
+    void read_f32(float* data, size_t count) final;
+    void read_f64(double* data, size_t count) final;
 
-    void write_i16(const int16_t* data, size_t count) final override;
-    void write_u16(const uint16_t* data, size_t count) final override;
-    void write_i32(const int32_t* data, size_t count) final override;
-    void write_u32(const uint32_t* data, size_t count) final override;
-    void write_i64(const int64_t* data, size_t count) final override;
-    void write_u64(const uint64_t* data, size_t count) final override;
-    void write_f32(const float* data, size_t count) final override;
-    void write_f64(const double* data, size_t count) final override;
+    void write_i16(const int16_t* data, size_t count) final;
+    void write_u16(const uint16_t* data, size_t count) final;
+    void write_i32(const int32_t* data, size_t count) final;
+    void write_u32(const uint32_t* data, size_t count) final;
+    void write_i64(const int64_t* data, size_t count) final;
+    void write_u64(const uint64_t* data, size_t count) final;
+    void write_f32(const float* data, size_t count) final;
+    void write_f64(const double* data, size_t count) final;
 private:
     template<typename T> inline void read_as_big_endian(T* data, size_t count);
     template<typename T> inline void write_as_big_endian(const T* data, size_t count);
@@ -404,23 +405,23 @@ public:
     LittleEndianFile(LittleEndianFile&&) noexcept = default;
     LittleEndianFile& operator=(LittleEndianFile&&) noexcept = default;
 
-    void read_i16(int16_t* data, size_t count) final override;
-    void read_u16(uint16_t* data, size_t count) final override;
-    void read_i32(int32_t* data, size_t count) final override;
-    void read_u32(uint32_t* data, size_t count) final override;
-    void read_i64(int64_t* data, size_t count) final override;
-    void read_u64(uint64_t* data, size_t count) final override;
-    void read_f32(float* data, size_t count) final override;
-    void read_f64(double* data, size_t count) final override;
+    void read_i16(int16_t* data, size_t count) final;
+    void read_u16(uint16_t* data, size_t count) final;
+    void read_i32(int32_t* data, size_t count) final;
+    void read_u32(uint32_t* data, size_t count) final;
+    void read_i64(int64_t* data, size_t count) final;
+    void read_u64(uint64_t* data, size_t count) final;
+    void read_f32(float* data, size_t count) final;
+    void read_f64(double* data, size_t count) final;
 
-    void write_i16(const int16_t* data, size_t count) final override;
-    void write_u16(const uint16_t* data, size_t count) final override;
-    void write_i32(const int32_t* data, size_t count) final override;
-    void write_u32(const uint32_t* data, size_t count) final override;
-    void write_i64(const int64_t* data, size_t count) final override;
-    void write_u64(const uint64_t* data, size_t count) final override;
-    void write_f32(const float* data, size_t count) final override;
-    void write_f64(const double* data, size_t count) final override;
+    void write_i16(const int16_t* data, size_t count) final;
+    void write_u16(const uint16_t* data, size_t count) final;
+    void write_i32(const int32_t* data, size_t count) final;
+    void write_u32(const uint32_t* data, size_t count) final;
+    void write_i64(const int64_t* data, size_t count) final;
+    void write_u64(const uint64_t* data, size_t count) final;
+    void write_f32(const float* data, size_t count) final;
+    void write_f64(const double* data, size_t count) final;
 private:
     template<typename T> inline void read_as_little_endian(T* data, size_t count);
     template<typename T> inline void write_as_little_endian(const T* data, size_t count);

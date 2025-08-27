@@ -1,10 +1,15 @@
 // Chemfiles, a modern library for chemistry file reading and writing
 // Copyright (C) Guillaume Fraux and contributors -- BSD license
 
+#include <cstddef>
 #include <cstdint>
 #include <cassert>
+
+#include <algorithm>
 #include <array>
+#include <iterator>
 #include <string>
+#include <utility>
 #include <vector>
 #include <memory>
 #include <exception>
@@ -31,6 +36,7 @@
 #include "chemfiles/Topology.hpp"
 #include "chemfiles/Property.hpp"
 #include "chemfiles/Connectivity.hpp"
+#include "chemfiles/Format.hpp"
 #include "chemfiles/FormatMetadata.hpp"
 
 #include "chemfiles/files/MemoryBuffer.hpp"
@@ -118,17 +124,17 @@ MMTFFormat::~MMTFFormat() {
             encodeToFile(structure_, filename_);
         } catch (const std::exception& e) {
             warning("MMTF writer", "error while finishing writing to {}: {}", filename_, e.what());
-        } catch (...) {
+        } catch (...) {  // NOLINT(bugprone-empty-catch)
             // ignore exceptions in destructor
         }
     }
 }
 
-size_t MMTFFormat::nsteps() {
+size_t MMTFFormat::size() {
     return static_cast<size_t>(structure_.numModels);
 }
 
-void MMTFFormat::read_step(const size_t step, Frame& frame) {
+void MMTFFormat::read_at(const size_t index, Frame& frame) {
     modelIndex_ = 0;
     chainIndex_ = 0;
     groupIndex_ = 0;
@@ -137,7 +143,7 @@ void MMTFFormat::read_step(const size_t step, Frame& frame) {
     interBondIndex_ = 0;
 
     // Fast-forward, keeping all indexes updated
-    while(modelIndex_ != step) {
+    while(modelIndex_ != index) {
         auto chainsPerModel = static_cast<size_t>(structure_.chainsPerModel[modelIndex_]);
         for (size_t j = 0; j < chainsPerModel; ++j) {
             auto groupsPerChain = static_cast<size_t>(structure_.groupsPerChain[chainIndex_]);
@@ -312,9 +318,10 @@ void MMTFFormat::read_group(Frame& frame, size_t group_type, Residue& residue, s
         atom.set_charge(static_cast<double>(group.formalChargeList[l]));
 
         const auto& altLocList = structure_.altLocList;
-        if (!mmtf::isDefaultValue(altLocList) && !(
-            altLocList[atomIndex_] == ' ' ||
-            altLocList[atomIndex_] == 0x00)) {
+        if (!mmtf::isDefaultValue(altLocList)
+            && altLocList[atomIndex_] != ' '
+            && altLocList[atomIndex_] != 0x00
+        ) {
             atom.set("altloc", std::string(1, altLocList[atomIndex_]));
         }
 
@@ -381,7 +388,7 @@ void MMTFFormat::apply_symmetry(Frame& frame) {
             }
 
             // ncs is a 4x4 matrix stored in column major order.
-            auto& ncs = transform.matrix;
+            const auto& ncs = transform.matrix;
             auto rotation = Matrix3D(
                 static_cast<double>(ncs[0]), static_cast<double>(ncs[4]), static_cast<double>(ncs[8]),
                 static_cast<double>(ncs[1]), static_cast<double>(ncs[5]), static_cast<double>(ncs[9]),
@@ -417,7 +424,7 @@ void MMTFFormat::apply_symmetry(Frame& frame) {
 
                 // Copy over everything except the atoms
                 auto new_residue = Residue(residue.name(), *residue.id());
-                for (auto& prop : residue.properties()) {
+                for (const auto& prop : residue.properties()) {
                     new_residue.set(prop.first, prop.second);
                 }
 
@@ -434,7 +441,7 @@ void MMTFFormat::apply_symmetry(Frame& frame) {
                     auto new_atom = frame[atom_id];
                     auto new_position = rotation * frame.positions()[atom_id] + translation;
 
-                    frame.add_atom(std::move(new_atom), std::move(new_position));
+                    frame.add_atom(std::move(new_atom), new_position);
                     new_residue.add_atom(frame.size() - 1);
                     old_to_sym[atom_id] = frame.size() - 1;
                 }
@@ -447,7 +454,7 @@ void MMTFFormat::apply_symmetry(Frame& frame) {
             }
 
             for (size_t i = 0; i < original_bond_size; ++i) {
-                auto& bond = frame.topology().bonds()[i];
+                const auto& bond = frame.topology().bonds()[i];
 
                 // bonds should be sorted so that when we hit original size, we're done
                 if (bond[0] >= original_size || bond[1] >= original_size) {
@@ -478,7 +485,7 @@ void MMTFFormat::write(const Frame& frame) {
     structure_.numAtoms += static_cast<int32_t>(frame.size());
 
     if (mmtf::isDefaultValue(structure_.unitCell)) {
-        auto& cell = frame.cell();
+        const auto& cell = frame.cell();
         auto lengths = cell.lengths();
         auto angles = cell.angles();
         structure_.unitCell.resize(6);
@@ -664,7 +671,7 @@ int8_t bond_order_to_mmtf(Bond::BondOrder order) {
             "bond order '{}' can not be represented in MMTF, defaulting to single bond",
             name
         );
-        return 1;
+        return static_cast<int8_t>(1);
     };
 
     switch(order) {

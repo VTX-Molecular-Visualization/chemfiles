@@ -4,11 +4,13 @@
 #ifndef CHEMFILES_FORMAT_AMBER_NETCDF_HPP
 #define CHEMFILES_FORMAT_AMBER_NETCDF_HPP
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
 #include "chemfiles/File.hpp"
 #include "chemfiles/Format.hpp"
+#include "chemfiles/external/optional.hpp"
 
 #include "chemfiles/files/Netcdf3File.hpp"
 
@@ -26,8 +28,8 @@ class AmberNetCDFBase: public Format {
 public:
     AmberNetCDFBase(std::string convention, std::string path, File::Mode mode, File::Compression compression);
 
-    void read(Frame& frame) override final;
-    void read_step(size_t step, Frame& frame) override final;
+    void read(Frame& frame) final;
+    void read_at(size_t index, Frame& frame) final;
     void write(const Frame& frame) override;
 
 protected:
@@ -50,14 +52,15 @@ protected:
     netcdf3::Netcdf3File file_;
     /// convention used
     std::string convention_;
-    /// last step read
-    size_t step_;
+    /// index of last step read
+    size_t index_;
 
     struct {
         variable_scale_t coordinates;
         variable_scale_t velocities;
         variable_scale_t cell_lengths;
         variable_scale_t cell_angles;
+        variable_scale_t time;
     } variables_;
 
     optional<std::string> file_title_;
@@ -80,7 +83,7 @@ class AmberTrajectory final: public AmberNetCDFBase {
 public:
     AmberTrajectory(std::string path, File::Mode mode, File::Compression compression);
 
-    size_t nsteps() override;
+    size_t size() override;
     void initialize(const Frame& frame) override;
 
 private:
@@ -93,7 +96,7 @@ public:
     AmberRestart(std::string path, File::Mode mode, File::Compression compression);
 
     void write(const Frame& frame) override;
-    size_t nsteps() override;
+    size_t size() override;
     void initialize(const Frame& frame) override;
 
 private:

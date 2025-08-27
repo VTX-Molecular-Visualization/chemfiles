@@ -1,11 +1,21 @@
 // Chemfiles, a modern library for chemistry file reading and writing
 // Copyright (C) Guillaume Fraux and contributors -- BSD license
 
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+
+#include <string>
 #include <utility>
 #include <memory>
 #include <set>
+#include <vector>
 
-#include "chemfiles/utils.hpp"
+#include "chemfiles/File.hpp"
+#include "chemfiles/Property.hpp"
+#include "chemfiles/types.hpp"
 #include "chemfiles/warnings.hpp"
 #include "chemfiles/error_fmt.hpp"
 
@@ -103,8 +113,7 @@ static std::unique_ptr<BinaryFile> open_dcd_file(std::string path, File::Mode mo
 
 
 DCDFormat::DCDFormat(std::string path, File::Mode mode, File::Compression compression):
-    file_(nullptr),
-    title_("")
+    file_(nullptr)
 {
     if (compression != File::DEFAULT) {
         throw format_error("compression is not supported for DCD files");
@@ -140,22 +149,22 @@ DCDFormat::DCDFormat(std::string path, File::Mode mode, File::Compression compre
     }
 }
 
-size_t DCDFormat::nsteps() {
+size_t DCDFormat::size() {
     return n_frames_;
 }
 
 void DCDFormat::read(Frame& frame) {
-    this->read_step(step_, frame);
-    step_++;
+    this->read_at(index_, frame);
+    index_++;
 }
 
-void DCDFormat::read_step(size_t step, Frame& frame) {
-    step_ = step;
+void DCDFormat::read_at(size_t index, Frame& frame) {
+    index_ = index;
 
-    if (step_ == 0) {
+    if (index_ == 0) {
         file_->seek(header_size_);
     } else {
-        file_->seek(header_size_ + first_frame_size_ + (step_ - 1) * frame_size_);
+        file_->seek(header_size_ + first_frame_size_ + (index_ - 1) * frame_size_);
     }
 
     frame.set_cell(this->read_cell());
@@ -163,7 +172,7 @@ void DCDFormat::read_step(size_t step, Frame& frame) {
 
     // set frame properties
     if (timesteps_.dt != 0.0 && timesteps_.step != 0) {
-        auto simulation_step = static_cast<double>(timesteps_.step * step_ + timesteps_.start);
+        auto simulation_step = static_cast<double>(timesteps_.step * index_ + timesteps_.start);
         frame.set("time", timesteps_.dt * simulation_step);
     }
 
@@ -399,7 +408,7 @@ void DCDFormat::read_positions(Frame& frame) {
 
     auto n_atoms_to_read = n_atoms_;
     if (!fixed_atoms_.empty()) {
-        if (step_ != 0) {
+        if (index_ != 0) {
             n_atoms_to_read = n_free_atoms_;
             for (size_t i=0; i<frame.size(); i++) {
                 if (fixed_atoms_[i].fixed) {
@@ -472,7 +481,7 @@ void DCDFormat::read_positions(Frame& frame) {
 
 void DCDFormat::read_fixed_coordinates() {
     auto frame = Frame();
-    this->read_step(0, frame);
+    this->read_at(0, frame);
     assert(fixed_atoms_.size() == frame.size());
 
     auto positions = frame.positions();
@@ -541,7 +550,7 @@ void DCDFormat::write(const Frame& frame) {
     this->write_positions(frame);
 
     n_frames_ += 1;
-    step_ += 1;
+    index_ += 1;
 
     // update the number of frames in the header
     auto current = file_->tell();
@@ -618,9 +627,9 @@ void DCDFormat::write_cell(const UnitCell& cell) {
         }
     }
 
-    if (!chemfiles::private_details::is_upper_triangular(cell.matrix())) {
+    if (!chemfiles::details::is_lower_triangular(cell.matrix())) {
         warning("DCD writer",
-            "the unit cell is not upper-triangular, positions might not align "
+            "the unit cell is not lower-triangular, positions might not align "
             "with the cell in the file"
         );
     }

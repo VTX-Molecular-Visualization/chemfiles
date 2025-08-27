@@ -1,15 +1,21 @@
 // From vmdconio.h
-#define VMDCON_WARN      2
-#define VMDCON_ERROR     3
+#include <utility>
+#define VMDCON_WARN 2
+#define VMDCON_ERROR 3
 
-extern "C" {
-    #include <molfile_plugin.h>
-    #include <vmdplugin.h>
+extern "C"
+{
+#include <molfile_plugin.h>
+#include <vmdplugin.h>
 }
 
 #include <array>
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
+
+#include <array>
+#include <functional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -26,89 +32,106 @@ extern "C" {
 #include "chemfiles/Frame.hpp"
 #include "chemfiles/Residue.hpp"
 #include "chemfiles/Topology.hpp"
+#include "chemfiles/Format.hpp"
+#include "chemfiles/FormatMetadata.hpp"
 
 #include "chemfiles/formats/Molfile.hpp"
 
 using namespace chemfiles;
 
 /******************************************************************************/
-#define PLUGINS_DATA(FORMAT, PLUGIN, READER, VELOCITIES)                       \
-    extern "C" int PLUGIN##_register(void*, vmdplugin_register_cb); /*NOLINT*/ \
-    extern "C" int PLUGIN##_fini(void); /*NOLINT*/                             \
-    extern "C" int PLUGIN##_init(void); /*NOLINT*/                             \
-    template <> struct MolfilePluginData<FORMAT> {                             \
-        int init() { return PLUGIN##_init(); }                                 \
-        int registration(void* data, vmdplugin_register_cb callback) {         \
-            return PLUGIN##_register(data, callback);                          \
-        }                                                                      \
-        int fini() { return PLUGIN##_fini(); }                                 \
-        std::string format() const {return #FORMAT;}                           \
-        std::string plugin_name() const {return #PLUGIN;}                      \
-        std::string reader() const {return #READER;}                           \
-        bool have_velocities() const {return VELOCITIES;}                     \
+#define PLUGINS_DATA(FORMAT, PLUGIN, READER, VELOCITIES)                        \
+    extern "C" int PLUGIN##_register(void *, vmdplugin_register_cb); /*NOLINT*/ \
+    extern "C" int PLUGIN##_fini(void);                              /*NOLINT*/ \
+    extern "C" int PLUGIN##_init(void);                              /*NOLINT*/ \
+    template <>                                                                 \
+    struct MolfilePluginData<FORMAT>                                            \
+    {                                                                           \
+        int init() { return PLUGIN##_init(); }                                  \
+        int registration(void *data, vmdplugin_register_cb callback)            \
+        {                                                                       \
+            return PLUGIN##_register(data, callback);                           \
+        }                                                                       \
+        int fini() { return PLUGIN##_fini(); }                                  \
+        std::string format() const { return #FORMAT; }                          \
+        std::string plugin_name() const { return #PLUGIN; }                     \
+        std::string reader() const { return #READER; }                          \
+        bool have_velocities() const { return VELOCITIES; }                     \
     }
 
-namespace chemfiles {
-    PLUGINS_DATA(TRJ,     gromacsplugin, trj,    false);
-    PLUGINS_DATA(PSF,     psfplugin,     psf,    false);
-    PLUGINS_DATA(MOLDEN,  moldenplugin,  molden, false);
+namespace chemfiles
+{
+    PLUGINS_DATA(TRJ, gromacsplugin, trj, false);
+    PLUGINS_DATA(PSF, psfplugin, psf, false);
+    PLUGINS_DATA(MOLDEN, moldenplugin, molden, false);
 }
 
 #undef PLUGINS_FUNCTIONS
 /******************************************************************************/
 
 /// data identifying a residue in molfile plugins
-struct residue_info_t {
+struct residue_info_t
+{
     int id;
     std::string name;
     std::string segid;
     std::string chain;
 
-    bool operator==(const residue_info_t& other) const {
+    bool operator==(const residue_info_t &other) const
+    {
         return (
             this->id == other.id &&
             this->name == other.name &&
             this->segid == other.segid &&
-            this->chain == other.chain
-        );
+            this->chain == other.chain);
     }
 };
 
-inline void hash_combine(std::size_t&) { }
+inline void hash_combine(size_t & /*hash*/) {}
 
 template <typename T, typename... Tail>
-inline void hash_combine(std::size_t& seed, const T& v, Tail... tail) {
+inline void hash_combine(size_t &seed, const T &v, Tail... tail)
+{
     std::hash<T> hasher;
     seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-    hash_combine(seed, tail...);
+    hash_combine(seed, std::move(tail)...);
 }
 
-namespace std {
-    template<> struct hash<residue_info_t> {
-        std::size_t operator()(const residue_info_t &info) const {
-            std::size_t result = 0;
+namespace std
+{
+    template <>
+    struct hash<residue_info_t>
+    {
+        size_t operator()(const residue_info_t &info) const
+        {
+            size_t result = 0;
             hash_combine(result, info.id, info.name, info.segid, info.chain);
             return result;
         }
     };
 }
 
-template <MolfileFormat F> static int register_plugin(void* user_data, vmdplugin_t* vmd_plugin) {
-    auto user_plugin = static_cast<molfile_plugin_t**>(user_data);
+template <MolfileFormat F>
+static int register_plugin(void *user_data, vmdplugin_t *vmd_plugin)
+{
+    auto *user_plugin = static_cast<molfile_plugin_t **>(user_data);
     assert(std::string(MOLFILE_PLUGIN_TYPE) == std::string(vmd_plugin->type));
 
-    auto plugin = reinterpret_cast<molfile_plugin_t*>(vmd_plugin);
+    auto *plugin = reinterpret_cast<molfile_plugin_t *>(vmd_plugin);
     // When this callback is called multiple times with more than one plugin,
     // only register the one whe want
-    if (MolfilePluginData<F>().reader() == plugin->name) {
+    if (MolfilePluginData<F>().reader() == plugin->name)
+    {
         *user_plugin = plugin;
     }
 
     return VMDPLUGIN_SUCCESS;
 }
 
-static int molfiles_to_chemfiles_warning(int level, const char* message) {
-    if (level == VMDCON_ERROR || level == VMDCON_WARN) {
+static int molfiles_to_chemfiles_warning(int level, const char *message)
+{
+    if (level == VMDCON_ERROR || level == VMDCON_WARN)
+    {
         send_warning(message);
     }
     return 0;
@@ -118,29 +141,30 @@ static int molfiles_to_chemfiles_warning(int level, const char* message) {
 
 template <MolfileFormat F>
 Molfile<F>::Molfile(std::string path, File::Mode mode, File::Compression compression)
-    : path_(std::move(path)), plugin_handle_(nullptr), data_(nullptr), natoms_(0) {
-    if (mode != File::READ) {
+    : path_(std::move(path)), plugin_handle_(nullptr), data_(nullptr), natoms_(0)
+{
+    if (mode != File::READ)
+    {
         throw format_error(
-            "molfiles based format {} is only available in read mode", plugin_data_.format()
-        );
+            "molfiles based format {} is only available in read mode", plugin_data_.format());
     }
 
-    if (compression != File::DEFAULT) {
+    if (compression != File::DEFAULT)
+    {
         throw format_error(
-            "molfiles based format {} do not support compression", plugin_data_.format()
-        );
+            "molfiles based format {} do not support compression", plugin_data_.format());
     }
 
-    if (plugin_data_.init()) {
+    if (plugin_data_.init())
+    {
         throw format_error(
-            "could not initialize the {} plugin", plugin_data_.format()
-        );
+            "could not initialize the {} plugin", plugin_data_.format());
     }
 
-    if (plugin_data_.registration(&plugin_handle_, register_plugin<F>)) {
+    if (plugin_data_.registration(static_cast<void *>(&plugin_handle_), register_plugin<F>))
+    {
         throw format_error(
-            "could not register the {} plugin", plugin_data_.format()
-        );
+            "could not register the {} plugin", plugin_data_.format());
     }
 
     // Check the ABI version of the plugin
@@ -150,93 +174,111 @@ Molfile<F>::Molfile(std::string path, File::Mode mode, File::Compression compres
 
     // Check that needed functions are here
     if (plugin_handle_->open_file_read == nullptr ||
-        (
-            plugin_handle_->read_next_timestep == nullptr &&
-            plugin_handle_->read_timestep == nullptr &&
-            plugin_handle_->read_structure == nullptr
-        ) || plugin_handle_->close_file_read == nullptr ) {
+        (plugin_handle_->read_next_timestep == nullptr &&
+         plugin_handle_->read_timestep == nullptr &&
+         plugin_handle_->read_structure == nullptr) ||
+        plugin_handle_->close_file_read == nullptr)
+    {
         throw format_error(
-            "the {} plugin does not have read capacities", plugin_data_.format()
-        );
+            "the {} plugin does not have read capacities", plugin_data_.format());
     }
 
     data_ = plugin_handle_->open_file_read(
-        path_.c_str(), plugin_handle_->name, &natoms_
-    );
+        path_.c_str(), plugin_handle_->name, &natoms_);
 
-    if (data_ == nullptr) {
+    if (data_ == nullptr)
+    {
         throw format_error(
-            "could not open the file at '{}' with {} plugin", path_, plugin_data_.format()
-        );
+            "could not open the file at '{}' with {} plugin", path_, plugin_data_.format());
     }
 
     read_topology();
 }
 
-template <MolfileFormat F> Molfile<F>::~Molfile() {
-    if (data_) {
+template <MolfileFormat F>
+Molfile<F>::~Molfile()
+{
+    if (data_ != nullptr)
+    {
         plugin_handle_->close_file_read(data_);
     }
     plugin_data_.fini();
 }
 
-template <MolfileFormat F> int Molfile<F>::read_next_timestep(molfile_timestep_t* timestep) {
-    if (plugin_handle_->read_next_timestep != nullptr) {
+template <MolfileFormat F>
+int Molfile<F>::read_next_timestep(molfile_timestep_t *timestep)
+{
+    if (plugin_handle_->read_next_timestep != nullptr)
+    {
         // This function is provided by classical molecular simulation format.
         return plugin_handle_->read_next_timestep(data_, natoms_, timestep);
-    } else if (plugin_handle_->read_timestep != nullptr) {
+    }
+    else if (plugin_handle_->read_timestep != nullptr)
+    {
         // This function is provided by quantum molecular simulation format.
         return plugin_handle_->read_timestep(
-            data_, natoms_, timestep, nullptr, nullptr
-        );
-    } else if (plugin_handle_->read_structure != nullptr) {
+            data_, natoms_, timestep, nullptr, nullptr);
+    }
+    else if (plugin_handle_->read_structure != nullptr)
+    {
         // topology only format, nothing to do
         return MOLFILE_SUCCESS;
-    } else {
+    }
+    else
+    {
         throw format_error(
             "read_next_timestep, read_timestep and read_structure are missing "
-            "in this plugin. This is a bug"
-        );
+            "in this plugin. This is a bug");
     }
 }
 
-template <MolfileFormat F> void Molfile<F>::read(Frame& frame) {
+template <MolfileFormat F>
+void Molfile<F>::read(Frame &frame)
+{
     std::vector<float> coords(3 * static_cast<size_t>(natoms_));
     std::vector<float> velocities(0);
 
     molfile_timestep_t timestep{nullptr, nullptr, 0, 0, 0, 90, 90, 90, 0};
     timestep.coords = coords.data();
-    if (plugin_data_.have_velocities()) {
+    if (plugin_data_.have_velocities())
+    {
         velocities.resize(3 * static_cast<size_t>(natoms_));
         timestep.velocities = velocities.data();
     }
 
     int status = read_next_timestep(&timestep);
-    if (status != MOLFILE_SUCCESS) {
+    if (status != MOLFILE_SUCCESS)
+    {
         throw format_error(
             "error while reading the file at '{}' with {} plugin",
-            path_, plugin_data_.format()
-        );
+            path_, plugin_data_.format());
     }
 
-    if (topology_) {
+    if (topology_)
+    {
         frame.resize(topology_->size());
         frame.set_topology(*topology_);
     }
     molfile_to_frame(timestep, frame);
 }
 
-template <MolfileFormat F> void Molfile<F>::read_step(size_t step, Frame& frame) {
-    while (step >= frames_.size()) {
+template <MolfileFormat F>
+void Molfile<F>::read_at(size_t index, Frame &frame)
+{
+    while (index >= frames_.size())
+    {
         Frame new_frame;
         this->read(new_frame);
         frames_.emplace_back(frame.clone());
     }
-    frame = frames_.at(step).clone();
+    frame = frames_.at(index).clone();
 }
 
-template <MolfileFormat F> size_t Molfile<F>::nsteps() {
-    if (plugin_handle_->read_next_timestep == nullptr) {
+template <MolfileFormat F>
+size_t Molfile<F>::size()
+{
+    if (plugin_handle_->read_next_timestep == nullptr)
+    {
         // FIXME: this is hacky, but the molden plugin does not respect a NULL
         // argument for molfile_timestep_t, so for now we are only able to read
         // a single step from all the QM format plugins.
@@ -244,11 +286,15 @@ template <MolfileFormat F> size_t Molfile<F>::nsteps() {
     }
     size_t n = 0;
     int status = MOLFILE_SUCCESS;
-    while (true) {
+    while (true)
+    {
         status = read_next_timestep(nullptr);
-        if (status == MOLFILE_SUCCESS) {
+        if (status == MOLFILE_SUCCESS)
+        {
             n++;
-        } else {
+        }
+        else
+        {
             break;
         }
     }
@@ -262,31 +308,33 @@ template <MolfileFormat F> size_t Molfile<F>::nsteps() {
 }
 
 template <MolfileFormat F>
-void Molfile<F>::molfile_to_frame(const molfile_timestep_t& timestep, Frame& frame) {
+void Molfile<F>::molfile_to_frame(const molfile_timestep_t &timestep, Frame &frame)
+{
     auto lengths = Vector3D(
         static_cast<double>(timestep.A),
         static_cast<double>(timestep.B),
-        static_cast<double>(timestep.C)
-    );
+        static_cast<double>(timestep.C));
     auto angles = Vector3D(
         static_cast<double>(timestep.alpha),
         static_cast<double>(timestep.beta),
-        static_cast<double>(timestep.gamma)
-    );
+        static_cast<double>(timestep.gamma));
     frame.set_cell({lengths, angles});
 
     frame.resize(static_cast<size_t>(natoms_));
     auto positions = frame.positions();
-    for (size_t i = 0; i < static_cast<size_t>(natoms_); i++) {
+    for (size_t i = 0; i < static_cast<size_t>(natoms_); i++)
+    {
         positions[i][0] = static_cast<double>(timestep.coords[3 * i + 0]);
         positions[i][1] = static_cast<double>(timestep.coords[3 * i + 1]);
         positions[i][2] = static_cast<double>(timestep.coords[3 * i + 2]);
     }
 
-    if (plugin_data_.have_velocities()) {
+    if (plugin_data_.have_velocities())
+    {
         frame.add_velocities();
         auto velocities = frame.velocities();
-        for (size_t i = 0; i < static_cast<size_t>(natoms_); i++) {
+        for (size_t i = 0; i < static_cast<size_t>(natoms_); i++)
+        {
             (*velocities)[i][0] = static_cast<double>(timestep.velocities[3 * i + 0]);
             (*velocities)[i][1] = static_cast<double>(timestep.velocities[3 * i + 1]);
             (*velocities)[i][2] = static_cast<double>(timestep.velocities[3 * i + 2]);
@@ -294,43 +342,50 @@ void Molfile<F>::molfile_to_frame(const molfile_timestep_t& timestep, Frame& fra
     }
 }
 
-template <MolfileFormat F> void Molfile<F>::read_topology() {
-    if (plugin_handle_->read_structure == nullptr) {
+template <MolfileFormat F>
+void Molfile<F>::read_topology()
+{
+    if (plugin_handle_->read_structure == nullptr)
+    {
         return;
     }
 
     std::vector<molfile_atom_t> atoms(static_cast<size_t>(natoms_));
     int optflags = 0;
     int status = plugin_handle_->read_structure(data_, &optflags, atoms.data());
-    if (status != MOLFILE_SUCCESS) {
+    if (status != MOLFILE_SUCCESS)
+    {
         throw format_error(
             "could not read the molecule structure with {} plugin",
-            plugin_data_.format()
-        );
+            plugin_data_.format());
     }
 
     topology_ = Topology();
 
     auto residues = std::unordered_map<residue_info_t, Residue>();
     size_t atom_id = 0;
-    for (auto& molfile_atom : atoms) {
+    for (auto &molfile_atom : atoms)
+    {
         Atom atom(molfile_atom.name, molfile_atom.type);
-        if ((optflags & MOLFILE_MASS) != 0) {
+        if ((optflags & MOLFILE_MASS) != 0)
+        {
             atom.set_mass(static_cast<double>(molfile_atom.mass));
         }
-        if ((optflags & MOLFILE_CHARGE) != 0) {
+        if ((optflags & MOLFILE_CHARGE) != 0)
+        {
             atom.set_charge(static_cast<double>(molfile_atom.charge));
         }
 
         topology_->add_atom(std::move(atom));
 
-        if (molfile_atom.resname != std::string("")) {
+        if (molfile_atom.resname != std::string(""))
+        {
             auto resid = static_cast<int64_t>(molfile_atom.resid);
             auto residue = Residue(molfile_atom.resname, resid);
             residue.set("segname", molfile_atom.segid);
             residue.set("chainname", molfile_atom.chain);
             residue.set("chainid", molfile_atom.chain);
-            auto info = residue_info_t {
+            auto info = residue_info_t{
                 molfile_atom.resid,
                 molfile_atom.resname,
                 molfile_atom.segid,
@@ -342,33 +397,35 @@ template <MolfileFormat F> void Molfile<F>::read_topology() {
         atom_id++;
     }
 
-    for (auto residue: residues) {
+    for (auto residue : residues)
+    {
         topology_->add_residue(std::move(residue.second));
     }
 
-    if (plugin_handle_->read_bonds == nullptr) {
+    if (plugin_handle_->read_bonds == nullptr)
+    {
         return;
     }
 
     int nbonds = 0;
-    int* from = nullptr;
-    int* to = nullptr;
+    int *from = nullptr;
+    int *to = nullptr;
 
     int dummy = 0;
-    float* _float = nullptr;
-    int* _int = nullptr;
-    char** _char = nullptr;
+    float *_float = nullptr;
+    int *_int = nullptr;
+    char **_char = nullptr;
 
     status = plugin_handle_->read_bonds(
-        data_, &nbonds, &from, &to, &_float, &_int, &dummy, &_char
-    );
-    if (status != MOLFILE_SUCCESS) {
+        data_, &nbonds, &from, &to, &_float, &_int, &dummy, &_char);
+    if (status != MOLFILE_SUCCESS)
+    {
         throw format_error(
-            "could not read bonds with {} plugin", plugin_data_.format()
-        );
+            "could not read bonds with {} plugin", plugin_data_.format());
     }
 
-    for (size_t i = 0; i < static_cast<size_t>(nbonds); i++) {
+    for (size_t i = 0; i < static_cast<size_t>(nbonds); i++)
+    {
         // Indexes are 1-based in Molfile
         topology_->add_bond(static_cast<size_t>(from[i] - 1),
                             static_cast<size_t>(to[i]) - 1);
@@ -380,7 +437,9 @@ template class chemfiles::Molfile<TRJ>;
 template class chemfiles::Molfile<PSF>;
 template class chemfiles::Molfile<MOLDEN>;
 
-template<> const FormatMetadata& chemfiles::format_metadata<Molfile<TRJ>>() {
+template <>
+const FormatMetadata &chemfiles::format_metadata<Molfile<TRJ>>()
+{
     static FormatMetadata metadata;
     metadata.name = "TRJ";
     metadata.extension = ".trj";
@@ -400,7 +459,9 @@ template<> const FormatMetadata& chemfiles::format_metadata<Molfile<TRJ>>() {
     return metadata;
 }
 
-template<> const FormatMetadata& chemfiles::format_metadata<Molfile<PSF>>() {
+template <>
+const FormatMetadata &chemfiles::format_metadata<Molfile<PSF>>()
+{
     static FormatMetadata metadata;
     metadata.name = "PSF";
     metadata.extension = ".psf";
@@ -422,7 +483,9 @@ template<> const FormatMetadata& chemfiles::format_metadata<Molfile<PSF>>() {
     return metadata;
 }
 
-template<> const FormatMetadata& chemfiles::format_metadata<Molfile<MOLDEN>>() {
+template <>
+const FormatMetadata &chemfiles::format_metadata<Molfile<MOLDEN>>()
+{
     static FormatMetadata metadata;
     metadata.name = "Molden";
     metadata.extension = ".molden";

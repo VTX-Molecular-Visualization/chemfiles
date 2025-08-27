@@ -4,6 +4,12 @@
 #ifndef CHEMFILES_FORMAT_GRO_HPP
 #define CHEMFILES_FORMAT_GRO_HPP
 
+#include <cstdint>
+#include <map>
+#include <string>
+#include <memory>
+#include <utility>
+
 #include "chemfiles/File.hpp"
 #include "chemfiles/Format.hpp"
 #include "chemfiles/Residue.hpp"
@@ -24,26 +30,24 @@ namespace chemfiles
 	public:
 		static const int64_t GRO_INDEX_MAX;
 
-		GROFormat(std::string path, File::Mode mode, File::Compression compression) :
-			TextFormat(std::move(path), mode, compression)
+		GROFormat(std::string path, File::Mode mode, File::Compression compression) : TextFormat(std::move(path), mode, compression)
 		{
 		}
 
-		GROFormat(std::shared_ptr<MemoryBuffer> memory, File::Mode mode, File::Compression compression) :
-			TextFormat(std::move(memory), mode, compression)
+		GROFormat(std::shared_ptr<MemoryBuffer> memory, File::Mode mode, File::Compression compression) : TextFormat(std::move(memory), mode, compression)
 		{
 		}
 
-		void			   read_next(Frame& frame) override;
-		void			   write_next(const Frame& frame) override;
+		void read_next(Frame &frame) override;
+		void write_next(const Frame &frame) override;
 		optional<uint64_t> forward() override;
 
 	private:
 		static std::string get_chain_name_from_index(const int chain_index);
 	};
 
-	template<>
-	const FormatMetadata& format_metadata<GROFormat>();
+	template <>
+	const FormatMetadata &format_metadata<GROFormat>();
 
 } // namespace chemfiles
 

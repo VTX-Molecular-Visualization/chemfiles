@@ -4,6 +4,7 @@
 #ifndef CHEMFILES_FRAME_HPP
 #define CHEMFILES_FRAME_HPP
 
+#include <cstddef>
 #include <string>
 #include <utility>
 #include <vector>
@@ -191,20 +192,20 @@ public:
     /// @example{frame/remove.cpp}
     void remove(size_t i);
 
-    /// Get the current simulation step.
+    /// Index of the frame in the file.
     ///
-    /// The step is set by the `Trajectory` when reading a frame.
+    /// This is set by the `Trajectory` when reading.
     ///
-    /// @example{frame/step.cpp}
-    size_t step() const {
-        return step_;
+    /// @example{frame/index.cpp}
+    size_t index() const {
+        return index_;
     }
 
-    /// Set the current simulation step to `step`
+    /// Set the frame index to `index`
     ///
-    /// @example{frame/step.cpp}
-    void set_step(size_t step) {
-        step_ = step;
+    /// @example{frame/index.cpp}
+    void set_index(size_t index) {
+        index_ = index;
     }
 
     /// Guess the bonds, angles, dihedrals and impropers angles in this frame.
@@ -326,7 +327,7 @@ public:
 
     /// Get a reference to the atom at the position `index`.
     ///
-    /// @example{frame/index.cpp}
+    /// @example{frame/indexing.cpp}
     ///
     /// @param index the atomic index
     /// @throws OutOfBounds if `index` is greater than `size()`
@@ -336,7 +337,7 @@ public:
 
     /// Get a const reference to the atom at the position `index`.
     ///
-    /// @example{frame/index.cpp}
+    /// @example{frame/indexing.cpp}
     ///
     /// @param index the atomic index
     /// @throws OutOfBounds if `index` is greater than `size()`
@@ -449,8 +450,8 @@ private:
     Frame(const Frame&) = default;
     Frame& operator=(const Frame&) = default;
 
-    /// Current simulation step
-    size_t step_ = 0;
+    /// Index of this frame in the file
+    size_t index_ = 0;
     /// Positions of the particles
     std::vector<Vector3D> positions_;
     /// Velocities of the particles
