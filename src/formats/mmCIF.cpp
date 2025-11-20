@@ -457,10 +457,10 @@ void mmCIFFormat::read_property_line(std::vector<std::string>& properties)
 	}
 }
 
-size_t mmCIFFormat::nsteps() {
+size_t mmCIFFormat::size() {
 	return steps_positions_.size();
 }
-void mmCIFFormat::read_step(const size_t step, Frame& frame) {
+void mmCIFFormat::read_at(const size_t step, Frame& frame) {
 	assert(step < steps_positions_.size());
 	current_step_ = step;
 	read(frame);

@@ -14,22 +14,23 @@
 
 namespace chemfiles {
 
-namespace details {
-    /// check if a single value is close enough to zero to be considered equal
-    /// to zero, in the context of unit cell matrices
-    bool is_roughly_zero(double value);
+    namespace details {
+        /// check if a single value is close enough to zero to be considered equal
+        /// to zero, in the context of unit cell matrices
+        bool is_roughly_zero(double value);
 
-    /// check if a single value is close enough to 90 to be considered equal
-    /// to 90, in the context of unit cell matrices
-    bool is_roughly_90(double value);
+        /// check if a single value is close enough to 90 to be considered equal
+        /// to 90, in the context of unit cell matrices
+        bool is_roughly_90(double value);
 
-    /// check if a matrix is diagonal according to `is_roughly_zero`
-    bool is_diagonal(const Matrix3D& matrix);
+        /// check if a matrix is diagonal according to `is_roughly_zero`
+        bool is_diagonal(const Matrix3D& matrix);
 
-    /// check if a matrix is a lower triangular matrix according to
-    /// `is_roughly_zero`
-    bool is_lower_triangular(const Matrix3D& matrix);
-}
+        /// check if a matrix is a lower triangular matrix according to
+        /// `is_roughly_zero`
+        bool is_lower_triangular(const Matrix3D& matrix);
+        bool is_upper_triangular(const Matrix3D& matrix);
+    }
 
 /// An UnitCell represent the box containing the atoms, and its periodicity
 ///

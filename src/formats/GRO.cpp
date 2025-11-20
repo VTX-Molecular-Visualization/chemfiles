@@ -50,6 +50,7 @@ const FormatMetadata& chemfiles::format_metadata<GROFormat>()
 }
 
 using chemfiles::details::is_lower_triangular;
+using chemfiles::details::is_upper_triangular;
 
 /// Check the number of digits before the decimal separator to be sure than
 /// we can represent them. In case of error, use the given `context` in the error
@@ -348,19 +349,19 @@ void GROFormat::write_next(const Frame& frame)
 	else
 	{ // Triclinic
 		const auto& matrix = cell.matrix() / 10;
-		if (!is_upper_triangular(matrix))
+		if (!is_lower_triangular(matrix))
 		{
-			throw format_error("unsupported triclinic but non upper-triangular cell matrix in GRO writer");
+			throw format_error("unsupported triclinic but non lower-triangular cell matrix in GRO writer");
 		}
 		check_values_size(Vector3D(matrix[0][0], matrix[1][1], matrix[2][2]), 8, "unit cell");
-		check_values_size(Vector3D(matrix[0][1], matrix[0][2], matrix[1][2]), 8, "unit cell");
+		check_values_size(Vector3D(matrix[1][0], matrix[2][0], matrix[2][1]), 8, "unit cell");
 		file_.print("   {:8.5f} {:8.5f} {:8.5f} 0.0 0.0 {:8.5f} 0.0 {:8.5f} {:8.5f}\n",
 			matrix[0][0],
 			matrix[1][1],
 			matrix[2][2],
-			matrix[0][1],
-			matrix[0][2],
-			matrix[1][2]);
+			matrix[1][0],
+			matrix[2][0],
+			matrix[2][1]);
 	}
 }
 

@@ -52,6 +52,11 @@ namespace chemfiles { namespace details {
         return is_roughly_zero(matrix[0][1]) && is_roughly_zero(matrix[0][2]) &&
                is_roughly_zero(matrix[1][2]);
     }
+
+    bool is_upper_triangular(const Matrix3D& matrix) {
+        return is_roughly_zero(matrix[2][2]) && is_roughly_zero(matrix[1][2]) &&
+               is_roughly_zero(matrix[2][1]);
+    }
 }}
 
 using namespace chemfiles::details;
