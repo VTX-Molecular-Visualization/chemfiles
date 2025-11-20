@@ -2,11 +2,17 @@
 // Copyright (C) Guillaume Fraux and contributors -- BSD license
 
 #include <cassert>
+#include <cstddef>
+
 #include <array>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include "chemfiles/Property.hpp"
+#include "chemfiles/config.h"
 #include "chemfiles/types.hpp"
+#include "chemfiles/unreachable.hpp"
 #include "chemfiles/utils.hpp"
 #include "chemfiles/warnings.hpp"
 #include "chemfiles/error_fmt.hpp"
@@ -25,7 +31,7 @@
 using namespace chemfiles;
 
 /// Create the basic builder common to AMBER and AMBERRESTART conventions
-static netcdf3::Netcdf3Builder base_builder(std::string convention, std::string title, size_t n_atoms);
+static netcdf3::Netcdf3Builder base_builder(std::string convention, const std::string& title, size_t n_atoms);
 
 /// Find the dimension with the given name in the file
 static optional<netcdf3::Dimension&> find_dimension(netcdf3::Netcdf3File& file, const std::string& name);
@@ -34,13 +40,14 @@ static size_t get_dimension_id(const netcdf3::Netcdf3Builder& builder, const std
 
 static double scale_for_distance(std::string unit);
 static double scale_for_velocity(std::string unit);
+static double scale_for_time(std::string unit);
 
 /******************************************************************************/
 
 AmberNetCDFBase::AmberNetCDFBase(std::string convention, std::string path, File::Mode mode, File::Compression compression):
     file_(std::move(path), mode),
     convention_(std::move(convention)),
-    step_(0)
+    index_(0)
 {
     if (compression != File::DEFAULT) {
         throw format_error("compression is not supported with NetCDF format");
@@ -57,7 +64,7 @@ AmberNetCDFBase::AmberNetCDFBase(std::string convention, std::string path, File:
         throw format_error("invalid Amber NetCDF file at '{}': {}", file_.path(), e.what());
     }
 
-    auto& attributes = file_.attributes();
+    const auto& attributes = file_.attributes();
     auto title = attributes.find("title");
     if (title != attributes.end() && title->second.kind() == netcdf3::Value::STRING) {
         file_title_ = title->second.as_string();
@@ -67,7 +74,7 @@ AmberNetCDFBase::AmberNetCDFBase(std::string convention, std::string path, File:
 
     // get the variables actually defined in the file
     variables_.coordinates = this->get_variable("coordinates");
-    if (variables_.coordinates.var) {
+    if (variables_.coordinates.var != nullptr) {
         auto units_attr = variables_.coordinates.var->attribute("units");
         if (units_attr && units_attr->kind() == netcdf3::Value::STRING) {
             variables_.coordinates.scale *= scale_for_distance(units_attr->as_string());
@@ -77,7 +84,7 @@ AmberNetCDFBase::AmberNetCDFBase(std::string convention, std::string path, File:
     }
 
     variables_.velocities = this->get_variable("velocities");
-    if (variables_.velocities.var) {
+    if (variables_.velocities.var != nullptr) {
         auto units_attr = variables_.velocities.var->attribute("units");
         if (units_attr && units_attr->kind() == netcdf3::Value::STRING) {
             variables_.velocities.scale *= scale_for_velocity(units_attr->as_string());
@@ -86,7 +93,7 @@ AmberNetCDFBase::AmberNetCDFBase(std::string convention, std::string path, File:
 
     variables_.cell_lengths = this->get_variable("cell_lengths");
     variables_.cell_angles = this->get_variable("cell_angles");
-    if (variables_.cell_lengths.var && variables_.cell_angles.var) {
+    if ((variables_.cell_lengths.var != nullptr) && (variables_.cell_angles.var != nullptr)) {
         auto units_attr = variables_.cell_lengths.var->attribute("units");
         if (units_attr && units_attr->kind() == netcdf3::Value::STRING) {
             variables_.cell_lengths.scale *= scale_for_distance(units_attr->as_string());
@@ -106,8 +113,8 @@ AmberNetCDFBase::AmberNetCDFBase(std::string convention, std::string path, File:
                 warning("Amber NetCDF reader", "unknown unit ({}) for angles", units);
             }
         }
-    } else if (variables_.cell_lengths.var) {
-        if (!variables_.cell_angles.var) {
+    } else if (variables_.cell_lengths.var != nullptr) {
+        if (variables_.cell_angles.var == nullptr) {
             throw format_error(
                 "invalid Amber NetCDF file at '{}': "
                 "cell_lengths requires cell_angles to be defined",
@@ -115,7 +122,7 @@ AmberNetCDFBase::AmberNetCDFBase(std::string convention, std::string path, File:
             );
         }
 
-        if (!variables_.coordinates.var) {
+        if (variables_.coordinates.var == nullptr) {
             throw format_error(
                 "invalid Amber NetCDF file at '{}': "
                 "cell_lengths requires coordinates to be defined",
@@ -124,9 +131,18 @@ AmberNetCDFBase::AmberNetCDFBase(std::string convention, std::string path, File:
         }
     }
 
+    variables_.time = this->get_variable("time");
+    if (variables_.time.var != nullptr) {
+        auto units_attr = variables_.time.var->attribute("units");
+        if (units_attr && units_attr->kind() == netcdf3::Value::STRING) {
+            variables_.time.scale *= scale_for_time(units_attr->as_string());
+        }
+    }
+
+
     if (mode == File::APPEND) {
         // start writing at the end of pre-existing files in append mode
-        step_ = static_cast<size_t>(file_.n_records());
+        index_ = static_cast<size_t>(file_.n_records());
     }
 }
 
@@ -192,13 +208,13 @@ AmberNetCDFBase::variable_scale_t AmberNetCDFBase::get_variable(const std::strin
 /******************************************************************************/
 
 void AmberNetCDFBase::read(Frame& frame) {
-    this->read_step(step_, frame);
-    step_++;
+    this->read_at(index_, frame);
+    index_++;
 }
 
-void AmberNetCDFBase::read_step(const size_t step, Frame& frame) {
-    // Set the internal step_ before further reading
-    step_ = step;
+void AmberNetCDFBase::read_at(const size_t index, Frame& frame) {
+    // Set the internal index_ before further reading
+    index_ = index;
 
     frame.set_cell(read_cell());
 
@@ -208,13 +224,29 @@ void AmberNetCDFBase::read_step(const size_t step, Frame& frame) {
 
     frame.resize(n_atoms_);
 
-    if (variables_.coordinates.var) {
+    if (variables_.coordinates.var != nullptr) {
         this->read_array(variables_.coordinates, frame.positions());
     }
 
-    if (variables_.velocities.var) {
+    if (variables_.velocities.var != nullptr) {
         frame.add_velocities();
         this->read_array(variables_.velocities, *frame.velocities());
+    }
+
+    if (variables_.time.var != nullptr) {
+        double time_value = 0.0;
+        if (variables_.time.var->type() == netcdf3::constants::NC_FLOAT) {
+            float value;
+            variables_.time.var->read(index, &value, 1);
+            time_value = variables_.time.scale * static_cast<double>(value);
+        } else if (variables_.time.var->type() == netcdf3::constants::NC_DOUBLE) {
+            double value;
+            variables_.time.var->read(index, &value, 1);
+            time_value = variables_.time.scale * value;
+        } else {
+            throw format_error("invalid type for time variable");
+        }
+        frame.set("time", time_value);
     }
 }
 
@@ -231,6 +263,8 @@ void AmberNetCDFBase::write(const Frame& frame) {
         variables_.cell_lengths = this->get_variable("cell_lengths");
         variables_.cell_angles = this->get_variable("cell_angles");
 
+        variables_.time = this->get_variable("time");
+
         n_atoms_ = frame.size();
     }
 
@@ -245,25 +279,44 @@ void AmberNetCDFBase::write(const Frame& frame) {
 
     write_cell(frame.cell());
 
-    if (variables_.coordinates.var) {
+    auto time_opt = frame.get<Property::DOUBLE>("time");
+    if (time_opt) {
+        if (variables_.time.var != nullptr) {
+            if (variables_.time.var->type() == netcdf3::constants::NC_FLOAT) {
+                // Amber NetCDF trajectory
+                float time_f32 = static_cast<float>(*time_opt);
+                variables_.time.var->write(index_, &time_f32, 1);
+            } else if (variables_.time.var->type() == netcdf3::constants::NC_DOUBLE) {
+                // Amber Restart
+                double time_f64 = *time_opt;
+                variables_.time.var->write(index_, &time_f64, 1);
+            } else {
+                throw format_error("invalid type for time variable");
+            }
+        } else {
+            warning("AMBER NetCDF", "this file does not have a 'time' attribute, it will not be saved");
+        }
+    }
+
+    if (variables_.coordinates.var != nullptr) {
         this->write_array(variables_.coordinates, frame.positions());
     }
 
     if (frame.velocities()) {
-        if (variables_.velocities.var) {
+        if (variables_.velocities.var != nullptr) {
             this->write_array(variables_.velocities, *frame.velocities());
         } else {
             warning("AMBER NetCDF", "this file does not contain space for velocities, they will not be saved");
         }
     }
 
-    step_ += 1;
+    index_ += 1;
 }
 
 /******************************************************************************/
 
 UnitCell AmberNetCDFBase::read_cell() {
-    if (!variables_.cell_lengths.var || !variables_.cell_angles.var) {
+    if ((variables_.cell_lengths.var == nullptr) || (variables_.cell_angles.var == nullptr)) {
         // No cell information
         return {};
     }
@@ -274,14 +327,14 @@ UnitCell AmberNetCDFBase::read_cell() {
     Vector3D lengths;
     auto& cell_lengths = variables_.cell_lengths.var;
     if (cell_lengths->type() == netcdf3::constants::NC_FLOAT) {
-        cell_lengths->read(step_, data_f32.data(), data_f32.size());
+        cell_lengths->read(index_, data_f32.data(), data_f32.size());
         lengths = Vector3D(
             static_cast<double>(data_f32[0]),
             static_cast<double>(data_f32[1]),
             static_cast<double>(data_f32[2])
         );
     } else if (cell_lengths->type() == netcdf3::constants::NC_DOUBLE) {
-        cell_lengths->read(step_, data_f64.data(), data_f64.size());
+        cell_lengths->read(index_, data_f64.data(), data_f64.size());
         lengths = Vector3D(
             data_f64[0],
             data_f64[1],
@@ -294,14 +347,14 @@ UnitCell AmberNetCDFBase::read_cell() {
     Vector3D angles;
     auto& cell_angles = variables_.cell_angles.var;
     if (cell_angles->type() == netcdf3::constants::NC_FLOAT) {
-        cell_angles->read(step_, data_f32.data(), data_f32.size());
+        cell_angles->read(index_, data_f32.data(), data_f32.size());
         angles = Vector3D(
             static_cast<double>(data_f32[0]),
             static_cast<double>(data_f32[1]),
             static_cast<double>(data_f32[2])
         );
     } else if (cell_angles->type() == netcdf3::constants::NC_DOUBLE) {
-        cell_angles->read(step_, data_f64.data(), data_f64.size());
+        cell_angles->read(index_, data_f64.data(), data_f64.size());
         angles = Vector3D(
             data_f64[0],
             data_f64[1],
@@ -319,14 +372,14 @@ UnitCell AmberNetCDFBase::read_cell() {
 
 void AmberNetCDFBase::read_array(variable_scale_t& variable, span<Vector3D> array) {
     if (variable.var->type() == netcdf3::constants::NC_FLOAT) {
-        variable.var->read(step_, buffer_f32_);
+        variable.var->read(index_, buffer_f32_);
         for (size_t i=0; i<n_atoms_; i++) {
             array[i][0] = variable.scale * static_cast<double>(buffer_f32_[3 * i + 0]);
             array[i][1] = variable.scale * static_cast<double>(buffer_f32_[3 * i + 1]);
             array[i][2] = variable.scale * static_cast<double>(buffer_f32_[3 * i + 2]);
         }
     } else if (variable.var->type() == netcdf3::constants::NC_DOUBLE) {
-        variable.var->read(step_, buffer_f64_);
+        variable.var->read(index_, buffer_f64_);
         for (size_t i=0; i<n_atoms_; i++) {
             array[i][0] = variable.scale * buffer_f64_[3 * i + 0];
             array[i][1] = variable.scale * buffer_f64_[3 * i + 1];
@@ -340,7 +393,7 @@ void AmberNetCDFBase::read_array(variable_scale_t& variable, span<Vector3D> arra
 /******************************************************************************/
 
 void AmberNetCDFBase::write_cell(const UnitCell& cell) {
-    if (!variables_.cell_lengths.var || !variables_.cell_angles.var) {
+    if ((variables_.cell_lengths.var == nullptr) || (variables_.cell_angles.var == nullptr)) {
         // no cell information
         if (cell.shape() != UnitCell::INFINITE) {
             warning("AMBER NetCDF", "this file does not contain space for unit cell data, it will not be saved");
@@ -356,9 +409,9 @@ void AmberNetCDFBase::write_cell(const UnitCell& cell) {
             static_cast<float>(lengths[1]),
             static_cast<float>(lengths[2]),
         };
-        cell_lengths->write(step_, data_f32.data(), data_f32.size());
+        cell_lengths->write(index_, data_f32.data(), data_f32.size());
     } else if (cell_lengths->type() == netcdf3::constants::NC_DOUBLE) {
-        cell_lengths->write(step_, &lengths[0], 3);
+        cell_lengths->write(index_, lengths.data(), 3);
     } else {
         unreachable();
     }
@@ -371,9 +424,9 @@ void AmberNetCDFBase::write_cell(const UnitCell& cell) {
             static_cast<float>(angles[1]),
             static_cast<float>(angles[2]),
         };
-        cell_angles->write(step_, data_f32.data(), data_f32.size());
+        cell_angles->write(index_, data_f32.data(), data_f32.size());
     } else if (cell_angles->type() == netcdf3::constants::NC_DOUBLE) {
-        cell_angles->write(step_, &angles[0], 3);
+        cell_angles->write(index_, angles.data(), 3);
     } else {
         unreachable();
     }
@@ -387,9 +440,9 @@ void AmberNetCDFBase::write_array(variable_scale_t& variable, span<const Vector3
             buffer_f32_[3 * i + 1] = static_cast<float>(array[i][1]);
             buffer_f32_[3 * i + 2] = static_cast<float>(array[i][2]);
         }
-        variable.var->write(step_, buffer_f32_);
+        variable.var->write(index_, buffer_f32_);
     } else if (variable.var->type() == netcdf3::constants::NC_DOUBLE) {
-        variable.var->write(step_, &array[0][0], 3 * array.size());
+        variable.var->write(index_, array[0].data(), 3 * array.size());
     } else {
         throw format_error("invalid type for variable, expected floating point");
     }
@@ -412,7 +465,7 @@ AmberTrajectory::AmberTrajectory(std::string path, File::Mode mode, File::Compre
     }
 }
 
-size_t AmberTrajectory::nsteps() {
+size_t AmberTrajectory::size() {
     return static_cast<size_t>(file_.n_records());
 }
 
@@ -434,7 +487,7 @@ void AmberTrajectory::validate() {
             );
         }
 
-        auto dimensions = variable.dimensions();
+        const auto& dimensions = variable.dimensions();
         if (dimensions.size() != 3) {
             throw format_error("'{}' variable must have three dimensions", name);
         } else if (dimensions[0]->name != "frame") {
@@ -464,7 +517,7 @@ void AmberTrajectory::validate() {
             );
         }
 
-        auto dimensions = variable.dimensions();
+        const auto& dimensions = variable.dimensions();
         if (dimensions.size() != 2) {
             throw format_error("'{}' variable must have two dimensions", name);
         } else if (dimensions[0]->name != "frame") {
@@ -497,6 +550,15 @@ void AmberTrajectory::initialize(const Frame& frame) {
     auto spatial_dim = get_dimension_id(builder, "spatial");
     auto cell_spatial_dim = get_dimension_id(builder, "cell_spatial");
     auto cell_angular_dim = get_dimension_id(builder, "cell_angular");
+
+    // the time property is only set up if the first written frame contains a time information!
+    if (frame.get<Property::DOUBLE>("time")) {
+        builder.add_variable("time", {
+            /* type = */ netcdf3::constants::NC_FLOAT,
+            /* dimensions = */ {frame_dim},
+            /* attributes = */ {{"units", netcdf3::Value("picosecond")}}
+        });
+    }
 
     builder.add_variable("coordinates", {
         /* type = */ netcdf3::constants::NC_FLOAT,
@@ -540,13 +602,13 @@ AmberRestart::AmberRestart(std::string path, File::Mode mode, File::Compression 
 }
 
 void AmberRestart::write(const Frame& frame) {
-    if (step_ != 0) {
+    if (index_ != 0) {
         throw format_error("AMBER Restart format only supports writing one frame");
     }
     AmberNetCDFBase::write(frame);
 }
 
-size_t AmberRestart::nsteps() {
+size_t AmberRestart::size() {
     return 1;
 }
 
@@ -560,7 +622,7 @@ void AmberRestart::validate() {
             );
         }
 
-        auto dimensions = variable.dimensions();
+        const auto& dimensions = variable.dimensions();
         if (dimensions.size() != 2) {
             throw format_error("'{}' variable must have two dimensions", name);
         } else if (dimensions[0]->name != "atom") {
@@ -588,7 +650,7 @@ void AmberRestart::validate() {
             );
         }
 
-        auto dimensions = variable.dimensions();
+        const auto& dimensions = variable.dimensions();
         if (dimensions.size() != 1) {
             throw format_error("'{}' variable must have one dimension", name);
         } else if (dimensions[0]->name != dimension) {
@@ -618,6 +680,14 @@ void AmberRestart::initialize(const Frame& frame) {
     auto spatial_dim = get_dimension_id(builder, "spatial");
     auto cell_spatial_dim = get_dimension_id(builder, "cell_spatial");
     auto cell_angular_dim = get_dimension_id(builder, "cell_angular");
+
+    if (frame.get<Property::DOUBLE>("time")) {
+        builder.add_variable("time", {
+            /* type = */ netcdf3::constants::NC_DOUBLE,
+            /* dimensions = */ {},
+            /* attributes = */ {{"units", netcdf3::Value("picosecond")}}
+        });
+    }
 
     builder.add_variable("coordinates", {
         /* type = */ netcdf3::constants::NC_DOUBLE,
@@ -693,7 +763,7 @@ template<> const FormatMetadata& chemfiles::format_metadata<AmberRestart>() {
 /******************************************************************************/
 
 optional<netcdf3::Dimension&> find_dimension(netcdf3::Netcdf3File& file, const std::string& name) {
-    for (auto& dimension: file.dimensions()) {
+    for (const auto& dimension: file.dimensions()) {
         if (dimension->name == name) {
             return *dimension;
         }
@@ -711,9 +781,9 @@ size_t get_dimension_id(const netcdf3::Netcdf3Builder& builder, const std::strin
     throw error("internal error: unable to find a dimension named {} in this Netcdf3Builder", name);
 }
 
-netcdf3::Netcdf3Builder base_builder(std::string convention, std::string title, size_t n_atoms) {
+netcdf3::Netcdf3Builder base_builder(std::string convention, const std::string& title, size_t n_atoms) {
     auto builder = netcdf3::Netcdf3Builder();
-    builder.add_attribute("Conventions", {convention});
+    builder.add_attribute("Conventions", {std::move(convention)});
     builder.add_attribute("ConventionVersion", {"1.0"});
     builder.add_attribute("program", {"chemfiles"});
     builder.add_attribute("programVersion", {CHEMFILES_VERSION});
@@ -797,4 +867,23 @@ double scale_for_velocity(std::string units) {
     }
 
     return scale;
+}
+
+double scale_for_time(std::string units) {
+    to_ascii_lowercase(units);
+
+    if (units == "picoseconds" || units == "picosecond" || units == "ps") {
+        return 1.0;
+    } else if (units == "femtoseconds" || units == "femtosecond" || units == "fs") {
+        return 1e-3;
+    } else if (units == "nanoseconds" || units == "nanosecond" || units == "ns") {
+        return 1e3;
+    } else if (units == "microseconds" || units == "microsecond" || units == "µs" || units == "us") {
+        return 1e6;
+    } else if (units == "seconds" || units == "second" || units == "s") {
+        return 1e12;
+    } else {
+        warning("Amber NetCDF reader", "unknown units ({}) for time", units);
+        return 1.0;
+    }
 }

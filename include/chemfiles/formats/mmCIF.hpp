@@ -4,7 +4,9 @@
 #ifndef CHEMFILES_FORMAT_MMCIF_HPP
 #define CHEMFILES_FORMAT_MMCIF_HPP
 
+#include <cstddef>
 #include <cstdint>
+
 #include <map>
 #include <memory>
 #include <string>

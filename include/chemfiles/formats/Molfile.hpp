@@ -4,10 +4,7 @@
 #ifndef CHEMFILES_FORMAT_MOLFILE_HPP
 #define CHEMFILES_FORMAT_MOLFILE_HPP
 
-extern "C" {
-    #include "vmdplugin.h"
-    #include "molfile_plugin.h"
-}
+#include <cstddef>
 
 #include <string>
 #include <vector>
@@ -17,6 +14,11 @@ extern "C" {
 #include "chemfiles/Format.hpp"
 #include "chemfiles/Topology.hpp"   // IWYU pragma: keep
 #include "chemfiles/external/optional.hpp"
+
+extern "C" {
+    #include "vmdplugin.h"
+    #include "molfile_plugin.h"
+}
 
 namespace chemfiles {
 class FormatMetadata;
@@ -59,8 +61,8 @@ public:
     ~Molfile() override;
 
     void read(Frame& frame) override;
-    void read_step(size_t step, Frame& frame) override;
-    size_t nsteps() override;
+    void read_at(size_t index, Frame& frame) override;
+    size_t size() override;
 private:
     /// Convert a molfile timestep to a chemfiles frame
     void molfile_to_frame(const molfile_timestep_t& timestep, Frame& frame);

@@ -2,10 +2,13 @@
 // Copyright (C) Guillaume Fraux and contributors -- BSD license
 
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 
 #include <array>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "chemfiles/error_fmt.hpp"
@@ -13,6 +16,7 @@
 #include "chemfiles/external/span.hpp"
 #include "chemfiles/types.hpp"
 
+#include "chemfiles/Atom.hpp"
 #include "chemfiles/File.hpp"
 #include "chemfiles/FormatMetadata.hpp"
 #include "chemfiles/Frame.hpp"
@@ -67,6 +71,8 @@ template <> const FormatMetadata& chemfiles::format_metadata<TRRFormat>() {
 static void get_cell(std::vector<float>& box, const Frame& frame);
 static void get_positions(std::vector<float>& x, const Frame& frame);
 static void get_velocities(std::vector<float>& v, const Frame& frame);
+static void get_forces(std::vector<float>& f, const Frame& frame);
+static bool has_forces(const Frame& frame);
 
 TRRFormat::TRRFormat(std::string path, File::Mode mode, File::Compression compression)
     : file_(std::move(path), mode) {
@@ -79,19 +85,78 @@ TRRFormat::TRRFormat(std::string path, File::Mode mode, File::Compression compre
     } else if (mode == File::APPEND) {
         try {
             determine_frame_offsets();
-        } catch (const Error&) {
+        } catch (const Error&) { // NOLINT(bugprone-empty-catch)
             // Ignore exceptions, because the file might not exist. If it does,
             // we need to get the number of atoms and frames for appending.
         }
     }
 }
 
-size_t TRRFormat::nsteps() { return frame_offsets_.size(); }
+size_t TRRFormat::size() { return frame_positions_.size(); }
 
-void TRRFormat::read_step(size_t step, Frame& frame) {
-    step_ = step;
-    file_.seek(frame_offsets_[step_]);
+void TRRFormat::read_at(size_t index, Frame& frame) {
+    index_ = index;
+    file_.seek(frame_positions_[index_]);
     read(frame);
+}
+
+template <typename T> void read_real_vec(XDRFile& file, std::vector<T>& dx) {
+    // Compile-time error whenever T is a concrete type here
+    // (i.e. specialization for float/double is not used)
+    static_assert(sizeof(T) == -1, "read_real_vec can only be used with float or double");
+}
+
+template <> void read_real_vec<double>(XDRFile& file, std::vector<double>& dx) {
+    file.read_f64(dx);
+}
+
+template <> void read_real_vec<float>(XDRFile& file, std::vector<float>& dx) { file.read_f32(dx); }
+
+template <typename T>
+void read_xvf(Frame& frame, XDRFile& file, size_t natoms, bool has_positions, bool has_velocities,
+              bool has_forces) {
+    static_assert(std::is_same<T, float>::value || std::is_same<T, double>::value,
+                  "read_xvf can only be used with float or double");
+
+    std::vector<T> dx(natoms * 3);
+    if (has_positions) {
+        read_real_vec(file, dx);
+        auto positions = frame.positions();
+        assert(dx.size() == 3 * positions.size());
+        for (size_t i = 0; i < frame.size(); i++) {
+            // Factor 10 because the cell lengths are in nm in the TRR format
+            positions[i][0] = static_cast<double>(dx[i * 3]) * 10.0;
+            positions[i][1] = static_cast<double>(dx[i * 3 + 1]) * 10.0;
+            positions[i][2] = static_cast<double>(dx[i * 3 + 2]) * 10.0;
+        }
+    }
+    if (has_velocities) {
+        read_real_vec(file, dx);
+        frame.add_velocities();
+        auto velocities = *frame.velocities();
+        assert(dx.size() == 3 * velocities.size());
+        for (size_t i = 0; i < frame.size(); i++) {
+            // Factor 10 because the lengths are in nm in the TRR format
+            // GROMACS velocity unit: nm / ps
+            velocities[i][0] = static_cast<double>(dx[i * 3]) * 10.0;
+            velocities[i][1] = static_cast<double>(dx[i * 3 + 1]) * 10.0;
+            velocities[i][2] = static_cast<double>(dx[i * 3 + 2]) * 10.0;
+        }
+    }
+    if (has_forces) {
+        read_real_vec(file, dx);
+        assert(dx.size() == 3 * frame.size());
+        for (size_t i = 0; i < frame.size(); i++) {
+            // Factor 10 because the lengths are in nm in the TRR format
+            // GROMACS force unit: kJ / (mol * nm)
+            const Vector3D force = {
+                static_cast<double>(dx[i * 3] / 10.0),
+                static_cast<double>(dx[i * 3 + 1] / 10.0),
+                static_cast<double>(dx[i * 3 + 2] / 10.0),
+            };
+            frame[i].set("force", force);
+        }
+    }
 }
 
 void TRRFormat::read(Frame& frame) {
@@ -100,10 +165,11 @@ void TRRFormat::read(Frame& frame) {
     bool has_box = (header.box_size > 0);
     bool has_positions = (header.x_size > 0);
     bool has_velocities = (header.v_size > 0);
+    bool has_forces = (header.f_size > 0);
 
-    frame.set_step(header.step);            // actual step of MD Simulation
-    frame.set("time", header.time);         // time in pico seconds
-    frame.set("trr_lambda", header.lambda); // coupling parameter for free energy methods
+    frame.set("simulation_step", header.step); // actual step of MD Simulation
+    frame.set("time", header.time);            // time in pico seconds
+    frame.set("trr_lambda", header.lambda);    // coupling parameter for free energy methods
     frame.set("has_positions", has_positions);
     frame.resize(header.natoms);
 
@@ -118,62 +184,12 @@ void TRRFormat::read(Frame& frame) {
     }
 
     if (header.use_double) {
-        std::vector<double> dx(header.natoms * 3);
-        if (has_positions) {
-            file_.read_f64(dx);
-            auto positions = frame.positions();
-            assert(dx.size() == 3 * positions.size());
-            for (size_t i = 0; i < frame.size(); i++) {
-                // Factor 10 because the cell lengths are in nm in the TRR format
-                positions[i][0] = dx[i * 3] * 10.0;
-                positions[i][1] = dx[i * 3 + 1] * 10.0;
-                positions[i][2] = dx[i * 3 + 2] * 10.0;
-            }
-        }
-        if (has_velocities) {
-            file_.read_f64(dx);
-            frame.add_velocities();
-            auto velocities = *frame.velocities();
-            assert(dx.size() == 3 * velocities.size());
-            for (size_t i = 0; i < frame.size(); i++) {
-                // Factor 10 because the lengths are in nm in the TRR format
-                velocities[i][0] = dx[i * 3] * 10.0;
-                velocities[i][1] = dx[i * 3 + 1] * 10.0;
-                velocities[i][2] = dx[i * 3 + 2] * 10.0;
-            }
-        }
+        read_xvf<double>(frame, file_, header.natoms, has_positions, has_velocities, has_forces);
     } else {
-        std::vector<float> dx(header.natoms * 3);
-        if (has_positions) {
-            file_.read_f32(dx);
-            auto positions = frame.positions();
-            assert(dx.size() == 3 * positions.size());
-            for (size_t i = 0; i < frame.size(); i++) {
-                // Factor 10 because the cell lengths are in nm in the TRR format
-                positions[i][0] = static_cast<double>(dx[i * 3]) * 10.0;
-                positions[i][1] = static_cast<double>(dx[i * 3 + 1]) * 10.0;
-                positions[i][2] = static_cast<double>(dx[i * 3 + 2]) * 10.0;
-            }
-        }
-        if (has_velocities) {
-            file_.read_f32(dx);
-            frame.add_velocities();
-            auto velocities = *frame.velocities();
-            assert(dx.size() == 3 * velocities.size());
-            for (size_t i = 0; i < frame.size(); i++) {
-                // Factor 10 because the lengths are in nm in the TRR format
-                velocities[i][0] = static_cast<double>(dx[i * 3]) * 10.0;
-                velocities[i][1] = static_cast<double>(dx[i * 3 + 1]) * 10.0;
-                velocities[i][2] = static_cast<double>(dx[i * 3 + 2]) * 10.0;
-            }
-        }
+        read_xvf<float>(frame, file_, header.natoms, has_positions, has_velocities, has_forces);
     }
 
-    if (header.f_size > 0) {
-        file_.skip(static_cast<uint64_t>(header.f_size));
-    }
-
-    step_++;
+    index_++;
 }
 
 TRRFormat::FrameHeader TRRFormat::read_frame_header() {
@@ -215,7 +231,7 @@ TRRFormat::FrameHeader TRRFormat::read_frame_header() {
         // determine real representation (float or double)
         size_t nflsize = 0;
         if (header.box_size > 0) {
-            nflsize = header.box_size / (3 * 3);
+            nflsize = header.box_size / 9;
         } else if (header.natoms > 0) {
             if (header.x_size > 0) {
                 nflsize = header.x_size / (header.natoms * 3);
@@ -258,29 +274,29 @@ void TRRFormat::determine_frame_offsets() {
     natoms_ = header.natoms;
 
     auto calc_framebytes = [&header]() {
-        return static_cast<uint64_t>(
-            header.ir_size + header.e_size + header.box_size + header.vir_size + header.pres_size +
-            header.top_size + header.sym_size + header.x_size + header.v_size + header.f_size);
+        return (header.ir_size + header.e_size + header.box_size + header.vir_size +
+                header.pres_size + header.top_size + header.sym_size + header.x_size +
+                header.v_size + header.f_size);
     };
     uint64_t framebytes = calc_framebytes();
 
-    const uint64_t filesize = file_.file_size();
-    const size_t est_nframes = static_cast<size_t>(filesize / (framebytes + TRR_MIN_HEADER_SIZE));
+    uint64_t filesize = file_.file_size();
+    auto est_nframes = static_cast<size_t>(filesize / (framebytes + TRR_MIN_HEADER_SIZE));
 
-    frame_offsets_.clear();
-    frame_offsets_.emplace_back(0);
-    frame_offsets_.reserve(est_nframes);
+    frame_positions_.clear();
+    frame_positions_.emplace_back(0);
+    frame_positions_.reserve(est_nframes);
 
     while (true) {
         file_.skip(framebytes);
 
-        const uint64_t frame_pos = file_.tell();
+        auto frame_pos = file_.tell();
         try {
             header = read_frame_header();
         } catch (const Error&) {
             break;
         }
-        frame_offsets_.emplace_back(frame_pos);
+        frame_positions_.emplace_back(frame_pos);
 
         framebytes = calc_framebytes();
     }
@@ -290,7 +306,7 @@ void TRRFormat::determine_frame_offsets() {
 
 void TRRFormat::write(const Frame& frame) {
     const size_t natoms = frame.size();
-    if (frame_offsets_.empty() && step_ == 0) {
+    if (frame_positions_.empty() && index_ == 0) {
         natoms_ = natoms;
     } else if (natoms_ != natoms) {
         throw format_error(
@@ -318,6 +334,9 @@ void TRRFormat::write(const Frame& frame) {
         v_size = 0;
     }
 
+    const size_t f_size = has_forces(frame) ? dx_size : 0;
+
+    auto step = frame.get("simulation_step").value_or(frame.index()).as_double();
     FrameHeader header = {
         false,    // use_double
         0,        // ir_size
@@ -329,17 +348,17 @@ void TRRFormat::write(const Frame& frame) {
         0,        // sym_size
         x_size,   // x_size
         v_size,   // v_size
-        0,        // f_size
+        f_size,   // f_size
 
         natoms,                                            // natoms
-        frame.step(),                                      // step
+        static_cast<size_t>(step),                         // step
         0,                                                 // nre
         frame.get("time").value_or(0.0).as_double(),       // time
         frame.get("trr_lambda").value_or(0.0).as_double(), // lambda
     };
     write_frame_header(header);
 
-    std::vector<float> box(3 * 3);
+    std::vector<float> box(9);
     if (box_size > 0) {
         get_cell(box, frame);
         file_.write_f32(box);
@@ -355,9 +374,13 @@ void TRRFormat::write(const Frame& frame) {
             get_velocities(dx, frame);
             file_.write_f32(dx);
         }
+        if (f_size > 0) {
+            get_forces(dx, frame);
+            file_.write_f32(dx);
+        }
     }
 
-    step_++;
+    index_++;
 }
 
 void TRRFormat::write_frame_header(const FrameHeader& header) {
@@ -385,22 +408,22 @@ void TRRFormat::write_frame_header(const FrameHeader& header) {
 }
 
 void get_cell(std::vector<float>& box, const Frame& frame) {
-    assert(box.size() == 3 * 3);
+    assert(box.size() == 9);
     // Factor 10 because the lengths are in nm in the TRR format
     auto matrix = frame.cell().matrix() / 10.0;
     box[0] = static_cast<float>(matrix[0][0]);
-    box[1] = static_cast<float>(matrix[1][0]);
-    box[2] = static_cast<float>(matrix[2][0]);
-    box[3] = static_cast<float>(matrix[0][1]);
+    box[1] = static_cast<float>(matrix[0][1]);
+    box[2] = static_cast<float>(matrix[0][2]);
+    box[3] = static_cast<float>(matrix[1][0]);
     box[4] = static_cast<float>(matrix[1][1]);
-    box[5] = static_cast<float>(matrix[2][1]);
-    box[6] = static_cast<float>(matrix[0][2]);
-    box[7] = static_cast<float>(matrix[1][2]);
+    box[5] = static_cast<float>(matrix[1][2]);
+    box[6] = static_cast<float>(matrix[2][0]);
+    box[7] = static_cast<float>(matrix[2][1]);
     box[8] = static_cast<float>(matrix[2][2]);
 }
 
 void get_positions(std::vector<float>& x, const Frame& frame) {
-    auto positions = frame.positions();
+    const auto& positions = frame.positions();
     assert(x.size() == 3 * positions.size());
     for (size_t i = 0; i < frame.size(); ++i) {
         // Factor 10 because the lengths are in nm in the TRR format
@@ -419,4 +442,26 @@ void get_velocities(std::vector<float>& v, const Frame& frame) {
         v[i * 3 + 1] = static_cast<float>(velocities[i][1] / 10.0);
         v[i * 3 + 2] = static_cast<float>(velocities[i][2] / 10.0);
     }
+}
+
+void get_forces(std::vector<float>& f, const Frame& frame) {
+    assert(f.size() == 3 * frame.size());
+    for (size_t i = 0; i < frame.size(); i++) {
+        // Default to zero force on atoms without the force property
+        const Vector3D atomic_force =
+            frame[i].get("force").value_or(Vector3D(0., 0., 0.)).as_vector3d();
+        // Factor 10 because the lengths are in nm in the TRR format
+        f[i * 3] = static_cast<float>(atomic_force[0] * 10.0);
+        f[i * 3 + 1] = static_cast<float>(atomic_force[1] * 10.0);
+        f[i * 3 + 2] = static_cast<float>(atomic_force[2] * 10.0);
+    }
+}
+
+bool has_forces(const Frame& frame) {
+    for (size_t i = 0; i < frame.size(); ++i) {
+        if (frame[i].get("force")) {
+            return true;
+        }
+    }
+    return false;
 }

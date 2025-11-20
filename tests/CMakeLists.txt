@@ -1,5 +1,5 @@
 # Update this value if you need to update the data file set
-set(TESTS_DATA_GIT "1256f2dbf7370528fb8361b28d78e4534633b1f7")
+set(TESTS_DATA_GIT "e39b877ac29569e6d9e184907047383364c655cf")
 
 if(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/data/${TESTS_DATA_GIT}")
     message(STATUS "Downloading test data files")
@@ -7,7 +7,7 @@ if(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/data/${TESTS_DATA_GIT}")
         "https://github.com/chemfiles/tests-data/archive/${TESTS_DATA_GIT}.tar.gz"
         "${CMAKE_CURRENT_BINARY_DIR}/${TESTS_DATA_GIT}.tar.gz"
         SHOW_PROGRESS
-        EXPECTED_HASH SHA1=5b25c9b2b5e3be9eeacfc435a15ad0598ee4ace5
+        EXPECTED_HASH SHA1=cf99614e876c1e326c73b028caab07cdb80120ce # curl -sL https://github.com/chemfiles/tests-data/archive/[commit_full_hash].tar.gz | sha1sum
     )
 
     message(STATUS "Unpacking test data files")
@@ -22,7 +22,8 @@ if(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/data/${TESTS_DATA_GIT}")
     )
 
     execute_process(
-        COMMAND ${CMAKE_COMMAND} -E rename tests-data-${TESTS_DATA_GIT} data
+        COMMAND ${CMAKE_COMMAND} -E rename chemfiles-tests-data-${TESTS_DATA_GIT} data
+        # COMMAND ${CMAKE_COMMAND} -E rename tests-data-${TESTS_DATA_GIT} data
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     )
 

@@ -4,6 +4,7 @@
 #ifndef CHEMFILES_PARSE_HPP
 #define CHEMFILES_PARSE_HPP
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <limits>

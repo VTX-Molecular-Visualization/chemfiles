@@ -49,7 +49,7 @@ const FormatMetadata& chemfiles::format_metadata<GROFormat>()
 	return metadata;
 }
 
-using chemfiles::private_details::is_upper_triangular;
+using chemfiles::details::is_lower_triangular;
 
 /// Check the number of digits before the decimal separator to be sure than
 /// we can represent them. In case of error, use the given `context` in the error

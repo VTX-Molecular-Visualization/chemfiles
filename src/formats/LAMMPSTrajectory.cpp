@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 
 #include <array>
@@ -10,10 +11,12 @@
 #include <vector>
 #include <string_view>
 
+#include "chemfiles/Property.hpp"
 #include "chemfiles/error_fmt.hpp"
 #include "chemfiles/external/optional.hpp"
 #include "chemfiles/parse.hpp"
 #include "chemfiles/types.hpp"
+#include "chemfiles/unreachable.hpp"
 #include "chemfiles/utils.hpp"
 #include "chemfiles/warnings.hpp"
 
@@ -46,7 +49,7 @@ template <> const FormatMetadata& chemfiles::format_metadata<LAMMPSTrajectoryFor
     return metadata;
 }
 
-using chemfiles::private_details::is_upper_triangular;
+using chemfiles::details::is_lower_triangular;
 
 static optional<std::string_view> get_item(std::string_view line) {
     auto splitted = split(line, ':');
@@ -85,7 +88,7 @@ std::array<double, 3> LAMMPSTrajectoryFormat::read_cell(Frame& frame) {
             matrix[0][0] = xhi - xlo;
             origin[0] = xlo;
             if (shape == UnitCell::TRICLINIC) {
-                matrix[0][1] = parse<double>(splitted[2]);
+                matrix[1][0] = parse<double>(splitted[2]);
             }
 
             line = file_.readline();
@@ -102,7 +105,7 @@ std::array<double, 3> LAMMPSTrajectoryFormat::read_cell(Frame& frame) {
             matrix[1][1] = yhi - ylo;
             origin[1] = ylo;
             if (shape == UnitCell::TRICLINIC) {
-                matrix[0][2] = parse<double>(splitted[2]);
+                matrix[2][0] = parse<double>(splitted[2]);
             }
 
             line = file_.readline();
@@ -119,7 +122,7 @@ std::array<double, 3> LAMMPSTrajectoryFormat::read_cell(Frame& frame) {
             matrix[2][2] = zhi - zlo;
             origin[2] = zlo;
             if (shape == UnitCell::TRICLINIC) {
-                matrix[1][2] = parse<double>(splitted[2]);
+                matrix[2][1] = parse<double>(splitted[2]);
             }
 
             auto cell = UnitCell(matrix);
@@ -135,7 +138,7 @@ std::array<double, 3> LAMMPSTrajectoryFormat::read_cell(Frame& frame) {
 
 /// LAMMPS is able to dump various per-atom properties and arbitrary user-defined
 /// variables
-enum lammps_atom_attr_t {
+enum lammps_atom_attr_t: std::uint8_t {
     // other possible attributes that are not important for chemfiles
     CUSTOM,
     // atom ID
@@ -177,7 +180,7 @@ enum lammps_atom_attr_t {
 // LAMMPS is able to dump the atomic positions in multiple formats
 // multiple of these representations might be present simultaneously in a frame
 // possible representations of the atomic positions
-enum lammps_position_representation_t {
+enum lammps_position_representation_t: std::uint8_t {
     // no atomic positions in frame
     NOPOS,
     // wrapped positions as x,y,z
@@ -300,8 +303,8 @@ detect_best_pos_representation(const std::vector<AtomField>& fields) {
 
 static void unwrap(Vector3D& position, std::array<int, 3>& image, Matrix3D& matrix) {
     // unwrap coordinates by using image data
-    position[0] += image[0] * matrix[0][0] + image[1] * matrix[0][1] + image[2] * matrix[0][2];
-    position[1] += image[1] * matrix[1][1] + image[2] * matrix[1][2];
+    position[0] += image[0] * matrix[0][0] + image[1] * matrix[1][0] + image[2] * matrix[2][0];
+    position[1] += image[1] * matrix[1][1] + image[2] * matrix[2][1];
     position[2] += image[2] * matrix[2][2];
 }
 
@@ -328,7 +331,7 @@ void LAMMPSTrajectoryFormat::read_next(Frame& frame) {
 
     if (*item == "TIMESTEP") {
         int64_t timestep = parse<int64_t>(trim(file_.readline()));
-        frame.set_step(static_cast<size_t>(timestep));
+        frame.set("simulation_step", timestep);
     } else {
         throw format_error("can not read next step as LAMMPS format: expected 'TIMESTEP' got '{}'",
                            *item);
@@ -522,6 +525,8 @@ void LAMMPSTrajectoryFormat::read_next(Frame& frame) {
                     atom.set(fields[j].name, std::string(splitted[j]));
                 }
                 break;
+            default:
+                unreachable();
             }
         }
     }
@@ -533,10 +538,10 @@ void LAMMPSTrajectoryFormat::read_next(Frame& frame) {
         for (size_t i = 0; i < natoms; ++i) {
             // x = xlo + xs * (xhi - xlo) + ys * xy + zs * xz
             positions[i][0] = origin[0] + positions[i][0] * matrix[0][0] +
-                              positions[i][1] * matrix[0][1] + positions[i][2] * matrix[0][2];
+                              positions[i][1] * matrix[1][0] + positions[i][2] * matrix[2][0];
             // y = ylo + ys * (yhi - ylo) + z * yz
             positions[i][1] =
-                origin[1] + positions[i][1] * matrix[1][1] + positions[i][2] * matrix[1][2];
+                origin[1] + positions[i][1] * matrix[1][1] + positions[i][2] * matrix[2][1];
             // z = zlo + zs * (zhi - zlo)
             positions[i][2] = origin[2] + positions[i][2] * matrix[2][2];
             if (images && use_pos_repr != SCALED_UNWRAPPED) {
@@ -561,14 +566,15 @@ void LAMMPSTrajectoryFormat::read_next(Frame& frame) {
 }
 
 static optional<size_t> parse_lammps_type(const std::string& type_str) {
-    if (type_str.empty())
+    if (type_str.empty()) {
         return nullopt;
+}
     try {
         int type = parse<int>(type_str);
         if (type > 0) {
             return static_cast<size_t>(type);
         }
-    } catch (const Error&) {
+    } catch (const Error&) {  // NOLINT(bugprone-empty-catch)
         // parsing errors indicate invalid types
     }
     return nullopt;
@@ -581,7 +587,9 @@ void LAMMPSTrajectoryFormat::write_next(const Frame& frame) {
     if (frame.get("time")) {
         file_.print("ITEM: TIME\n{:.16g}\n", (*frame.get("time")).as_double());
     }
-    file_.print("ITEM: TIMESTEP\n{:d}\n", frame.step());
+
+    auto step = frame.get("simulation_step").value_or(frame.index()).as_double();
+    file_.print("ITEM: TIMESTEP\n{:d}\n", static_cast<uint64_t>(step));
     file_.print("ITEM: NUMBER OF ATOMS\n{:d}\n", frame.size());
 
     const auto& cell = frame.cell();
@@ -594,26 +602,26 @@ void LAMMPSTrajectoryFormat::write_next(const Frame& frame) {
         file_.print("{:-1.12e} {:-1.12e}\n", 0.0, lengths[2]);
     } else { // Triclinic
         const auto& matrix = cell.matrix();
-        if (!is_upper_triangular(matrix)) {
-            throw format_error("unsupported triclinic but non upper-triangular cell "
+        if (!is_lower_triangular(matrix)) {
+            throw format_error("unsupported triclinic but non lower-triangular cell "
                                "matrix in LAMMPS writer");
         }
         file_.print("ITEM: BOX BOUNDS xy xz yz pp pp pp\n");
-        file_.print("{:-1.12e} {:-1.12e} {:-1.12e}\n", 0.0, matrix[0][0], matrix[0][1]);
-        file_.print("{:-1.12e} {:-1.12e} {:-1.12e}\n", 0.0, matrix[1][1], matrix[0][2]);
-        file_.print("{:-1.12e} {:-1.12e} {:-1.12e}\n", 0.0, matrix[2][2], matrix[1][2]);
+        file_.print("{:-1.12e} {:-1.12e} {:-1.12e}\n", 0.0, matrix[0][0], matrix[1][0]);
+        file_.print("{:-1.12e} {:-1.12e} {:-1.12e}\n", 0.0, matrix[1][1], matrix[2][0]);
+        file_.print("{:-1.12e} {:-1.12e} {:-1.12e}\n", 0.0, matrix[2][2], matrix[2][1]);
     }
 
     bool has_names = false;
     for (size_t i = 0; i < frame.size(); ++i) {
-        auto& atom = frame[i];
+        const auto& atom = frame[i];
         if (!atom.name().empty()) {
             has_names = true;
             break;
         }
     }
 
-    auto positions = frame.positions();
+    const auto& positions = frame.positions();
     auto velocities = frame.velocities();
     file_.print("ITEM: ATOMS id xu yu zu type"); // write unwrapped positions
     if (has_names) {
@@ -625,7 +633,7 @@ void LAMMPSTrajectoryFormat::write_next(const Frame& frame) {
     }
     file_.print("\n");
     for (size_t i = 0; i < frame.size(); ++i) {
-        auto& atom = frame[i];
+        const auto& atom = frame[i];
         // LAMMPS uses atom IDs that start with 1
         file_.print("{:d} {:g} {:g} {:g}", i + 1, positions[i][0], positions[i][1],
                     positions[i][2]);
@@ -633,8 +641,9 @@ void LAMMPSTrajectoryFormat::write_next(const Frame& frame) {
         if (type && (min_numeric_type_ == 0 || *type <= min_numeric_type_)) {
             // a valid numeric type and no other invalid types encountered previously
             file_.print(" {:d}", *type);
-            if (*type > max_numeric_type_)
+            if (*type > max_numeric_type_) {
                 max_numeric_type_ = *type;
+            }
         } else {
             // use a generated numeric type because trajectory contains invalid types
             auto search = type_list_.find(atom.type());
@@ -657,7 +666,7 @@ void LAMMPSTrajectoryFormat::write_next(const Frame& frame) {
         }
         file_.print(" {:g} {:g}", atom.mass(), atom.charge());
         if (velocities) {
-            auto& v = (*velocities)[i];
+            const auto& v = (*velocities)[i];
             file_.print(" {:g} {:g} {:g}", v[0], v[1], v[2]);
         }
         file_.print("\n");

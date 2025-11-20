@@ -2,6 +2,7 @@
 // Copyright (C) Guillaume Fraux and contributors -- BSD license
 
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 
 #include <string>

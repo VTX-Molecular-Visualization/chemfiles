@@ -1,6 +1,7 @@
 // Chemfiles, a modern library for chemistry file reading and writing
 // Copyright (C) Guillaume Fraux and contributors -- BSD license
 #include <iostream>
+#include <string>
 
 #include "catch.hpp"
 #include "helpers.hpp"
@@ -11,13 +12,13 @@ using namespace chemfiles;
 TEST_CASE("Read files in XYZ format") {
     SECTION("Check nsteps") {
         auto file = Trajectory("data/xyz/trajectory.xyz");
-        CHECK(file.nsteps() == 2);
+        CHECK(file.size() == 2);
 
         file = Trajectory("data/xyz/helium.xyz");
-        CHECK(file.nsteps() == 397);
+        CHECK(file.size() == 397);
 
         file = Trajectory("data/xyz/topology.xyz");
-        CHECK(file.nsteps() == 1);
+        CHECK(file.size() == 1);
     }
 
     SECTION("Read next step") {
@@ -37,8 +38,8 @@ TEST_CASE("Read files in XYZ format") {
     SECTION("Read a specific step") {
         auto file = Trajectory("data/xyz/helium.xyz");
         // Read frame at a specific positions
-        auto frame = file.read_step(42);
-        CHECK(frame.step() == 42);
+        auto frame = file.read_at(42);
+        CHECK(frame.index() == 42);
         auto positions = frame.positions();
         CHECK(approx_eq(positions[0], {-0.145821, 8.540648, 1.090281}, 1e-12));
         CHECK(approx_eq(positions[124], {8.446093, 8.168162, 9.350953}, 1e-12));
@@ -46,8 +47,8 @@ TEST_CASE("Read files in XYZ format") {
         CHECK(topology.size() == 125);
         CHECK(topology[0] == Atom("He"));
 
-        frame = file.read_step(0);
-        CHECK(frame.step() == 0);
+        frame = file.read_at(0);
+        CHECK(frame.index() == 0);
         positions = frame.positions();
         CHECK(approx_eq(positions[0], {0.49053, 8.41351, 0.0777257}, 1e-12));
         CHECK(approx_eq(positions[124], {8.57951, 8.65712, 8.06678}, 1e-12));
@@ -55,7 +56,7 @@ TEST_CASE("Read files in XYZ format") {
 
     SECTION("Read the whole file") {
         auto file = Trajectory("data/xyz/helium.xyz");
-        REQUIRE(file.nsteps() == 397);
+        REQUIRE(file.size() == 397);
 
         Frame frame;
         while (!file.done()) {
@@ -76,7 +77,7 @@ TEST_CASE("Read files in XYZ format") {
 
     SECTION("Extended XYZ") {
         auto file = Trajectory("data/xyz/extended.xyz");
-        CHECK(file.nsteps() == 3);
+        CHECK(file.size() == 3);
 
         auto frame = file.read();
         CHECK(frame.size() == 192);
@@ -95,6 +96,7 @@ TEST_CASE("Read files in XYZ format") {
         CHECK(frame.get("IsStrange")->as_bool() == true);
 
         // Atom level properties
+        CHECK_FALSE(frame.velocities());
         CHECK(approx_eq(frame.positions()[0], {2.33827271799, 4.55315540425, 11.5841360926}, 1e-12));
         CHECK(frame[0].get("CS_0")->as_double() == 24.10);
         CHECK(frame[0].get("CS_1")->as_double() == 31.34);
@@ -122,6 +124,33 @@ TEST_CASE("Read files in XYZ format") {
         CHECK(frame[0].get("int")->as_double() == 33.0);
         CHECK(frame[0].get("strings_0")->as_string() == "bar");
         CHECK(frame[0].get("strings_1")->as_string() == "\"test\"");
+
+        file = Trajectory("data/xyz/velocities.xyz");
+        CHECK(file.size() == 1);
+        frame = file.read();
+        CHECK(frame.size() == 3);
+        CHECK(approx_eq(frame.positions()[0], {0, 0, 1}, 1e-12));
+
+        CHECK(frame.velocities());
+        CHECK(approx_eq(frame.velocities().value()[0], {1, 0, 0}, 1e-12));
+    }
+
+    SECTION("Extended XYZ — no Properties=") {
+        auto xyz = std::string(R"(3
+Lattice="10.0 0.0 0.0 0.0 10.0 0.0 0.0 0.0 10.0" pbc="T T T"
+O       0.06633400       0.00000000       0.00370100
+H      -0.52638300      -0.76932700      -0.02936600
+H      -0.52638300       0.76932700      -0.02936600
+)");
+
+        auto file = Trajectory::memory_reader(xyz.data(), xyz.size(), "XYZ");
+        CHECK(file.size() == 1);
+
+        auto frame = file.read();
+        CHECK(frame.size() == 3);
+
+        auto expected = UnitCell({10.0, 10.0, 10.0}, {90.0, 90.0, 90.0});
+        CHECK(approx_eq(frame.cell().matrix(), expected.matrix(), 1e-6));
     }
 }
 
@@ -138,39 +167,39 @@ TEST_CASE("Errors in XYZ format") {
         );
 
         auto file = Trajectory("data/xyz/bad/extended.xyz");
-        CHECK_THROWS_WITH(file.read_step(0),
+        CHECK_THROWS_WITH(file.read_at(0),
             "error while reading '': expected 1 values, found 0"
         );
 
-        CHECK_THROWS_WITH(file.read_step(1),
+        CHECK_THROWS_WITH(file.read_at(1),
             "error while reading ' ff': can not parse 'ff' as a double"
         );
 
-        CHECK_THROWS_WITH(file.read_step(2),
+        CHECK_THROWS_WITH(file.read_at(2),
             "error while reading '': expected 1 values, found 0"
         );
 
-        CHECK_THROWS_WITH(file.read_step(3),
+        CHECK_THROWS_WITH(file.read_at(3),
             "error while reading ' ze': can not parse 'ze' as a double"
         );
 
-        CHECK_THROWS_WITH(file.read_step(4),
+        CHECK_THROWS_WITH(file.read_at(4),
             "error while reading ' 3 4': expected 3 values, found 2"
         );
 
-        CHECK_THROWS_WITH(file.read_step(5),
+        CHECK_THROWS_WITH(file.read_at(5),
             "error while reading ' 3 4 ff': can not parse 'ff' as a double"
         );
 
-        CHECK_THROWS_WITH(file.read_step(6),
+        CHECK_THROWS_WITH(file.read_at(6),
             "error while reading '': expected 1 values, found 0"
         );
 
-        CHECK_THROWS_WITH(file.read_step(7),
+        CHECK_THROWS_WITH(file.read_at(7),
             "invalid value for boolean 'ok'"
         );
 
-        CHECK_THROWS_WITH(file.read_step(8),
+        CHECK_THROWS_WITH(file.read_at(8),
             "error while reading '': expected 1 values, found 0"
         );
     }
@@ -183,7 +212,7 @@ TEST_CASE("Errors in XYZ format") {
         });
 
         auto file = Trajectory("data/xyz/bad/extended-bad-properties.xyz");
-        REQUIRE(file.nsteps() == 5);
+        REQUIRE(file.size() == 5);
 
         auto frame = file.read();
         check_bad_properties_still_read_frame(frame);
@@ -221,7 +250,7 @@ TEST_CASE("Errors in XYZ format") {
 
 TEST_CASE("Write files in XYZ format") {
     auto tmpfile = NamedTempPath(".xyz");
-    const auto EXPECTED_CONTENT =
+    const auto* EXPECTED_CONTENT =
 R"(4
 Properties=species:S:1:pos:R:3:bool:L:1:double:R:1:string:S:1:vector:R:3 name="Test"
 A 1 2 3 T 10 atom_0 10 20 30
@@ -229,13 +258,13 @@ B 1 2 3 F 11 atom_1 11 21 31
 C 1 2 3 T 12 atom_2 12 22 32
 D 1 2 3 T 13 atom_2 13 23 33
 6
-Properties=species:S:1:pos:R:3 Lattice="12 0 0 0 13 0 0 0 14" direction="1 0 2" is_open=F name="Test" 'quotes"'=T "quotes'"=T speed=33.4 "with space"=T
-A 1 2 3
-B 1 2 3
-C 1 2 3
-D 1 2 3
-E 4 5 6
-F 4 5 6
+Properties=species:S:1:pos:R:3:velo:R:3 Lattice="12 0 0 0 13 0 0 0 14" direction="1 0 2" is_open=F name="Test" 'quotes"'=T "quotes'"=T speed=33.4 "with space"=T
+A 1 2 3 0 0 0
+B 1 2 3 0 0 0
+C 1 2 3 0 0 0
+D 1 2 3 0 0 0
+E 4 5 6 7 8 9
+F 4 5 6 7 8 9
 )";
 
     auto frame = Frame();
@@ -292,8 +321,10 @@ F 4 5 6
     // properties with two type of quotes are skipped
     frame.set("all_quotes'\"", true);
 
-    frame.add_atom(Atom("E"), {4, 5, 6});
-    frame.add_atom(Atom("F"), {4, 5, 6});
+    frame.add_velocities();
+
+    frame.add_atom(Atom("E"), {4, 5, 6}, {7, 8, 9});
+    frame.add_atom(Atom("F"), {4, 5, 6}, {7, 8, 9});
 
     file.write(frame);
     file.close();
@@ -307,13 +338,13 @@ TEST_CASE("Read and write files in memory") {
         auto content = read_text_file("data/xyz/topology.xyz");
 
         auto file = Trajectory::memory_reader(content.data(), content.size(), "XYZ");
-        CHECK(file.nsteps() == 1);
+        CHECK(file.size() == 1);
 
         auto frame = file.read();
     }
 
     SECTION("Writing to memory") {
-        const auto expected_content =
+        const auto* expected_content =
 R"(4
 Properties=species:S:1:pos:R:3
 A 1 2 3

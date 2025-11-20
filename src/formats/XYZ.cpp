@@ -2,18 +2,18 @@
 // Copyright (C) Guillaume Fraux and contributors -- BSD license
 
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 
 #include <map>
 #include <set>
 #include <array>
 #include <string>
+#include <utility>
 #include <vector>
-#include <exception>
 #include <string_view>
 #include <unordered_map>
-
-#include <fmt/format.h>
 
 #include "chemfiles/types.hpp"
 #include "chemfiles/parse.hpp"
@@ -26,9 +26,9 @@
 #include "chemfiles/File.hpp"
 #include "chemfiles/Atom.hpp"
 #include "chemfiles/Frame.hpp"
-#include "chemfiles/Topology.hpp"
 #include "chemfiles/Property.hpp"
 #include "chemfiles/UnitCell.hpp"
+#include "chemfiles/Format.hpp"
 #include "chemfiles/FormatMetadata.hpp"
 
 #include "chemfiles/formats/XYZ.hpp"
@@ -39,6 +39,7 @@ using namespace chemfiles;
 static UnitCell parse_cell(std::string_view lattice);
 
 struct extended_property {
+    extended_property(std::string name_, Property::Kind type_): name(std::move(name_)), type(type_) {}
     std::string name;
     Property::Kind type;
 };
@@ -51,13 +52,13 @@ using properties_list_t = std::vector<extended_property>;
 static properties_list_t read_extended_comment_line(std::string_view line, Frame& frame);
 
 /// Read the properties in the list form the line and set them on the atom
-static void read_atomic_properties(const properties_list_t& properties, std::string_view line, Atom& atom);
+static void read_atomic_properties(const properties_list_t& properties, std::string_view line, Atom& atom, Vector3D& velo);
 
 /// Get the list of atoms properties defined for all atoms in the frame
 static properties_list_t get_atom_properties(const Frame& frame);
 
 /// Generate the extended XYZ comment line for the given frame
-static std::string write_extended_comment_line(const Frame& frame, properties_list_t properties);
+static std::string write_extended_comment_line(const Frame& frame, const properties_list_t& properties);
 
 template<> const FormatMetadata& chemfiles::format_metadata<XYZFormat>() {
     static FormatMetadata metadata;
@@ -71,7 +72,7 @@ template<> const FormatMetadata& chemfiles::format_metadata<XYZFormat>() {
     metadata.memory = true;
 
     metadata.positions = true;
-    metadata.velocities = false;
+    metadata.velocities = true;
     metadata.unit_cell = true;
     metadata.atoms = true;
     metadata.bonds = false;
@@ -80,24 +81,28 @@ template<> const FormatMetadata& chemfiles::format_metadata<XYZFormat>() {
 }
 
 void XYZFormat::read_next(Frame& frame) {
-    size_t n_atoms = parse<size_t>(file_.readline());
+    auto n_atoms = parse<size_t>(file_.readline());
 
     auto properties = read_extended_comment_line(file_.readline(), frame);
 
     frame.reserve(n_atoms);
     for (size_t i=0; i<n_atoms; i++) {
         auto line = file_.readline();
-        double x = 0, y = 0, z = 0;
+        double x = 0;
+        double y = 0;
+        double z = 0;
+        auto velocity = Vector3D();
         std::string name;
         auto count = scan(line, name, x, y, z);
         auto atom = Atom(std::move(name));
-        read_atomic_properties(properties, line.substr(count), atom);
-        frame.add_atom(std::move(atom), Vector3D(x, y, z));
+        read_atomic_properties(properties, line.substr(count), atom, velocity);
+        frame.add_atom(std::move(atom), Vector3D(x, y, z), velocity);
     }
 }
 
 void XYZFormat::write_next(const Frame& frame) {
-    auto& positions = frame.positions();
+    const auto& positions = frame.positions();
+    auto velocities = frame.velocities();
     auto properties = get_atom_properties(frame);
 
     file_.print("{}\n", frame.size());
@@ -111,9 +116,18 @@ void XYZFormat::write_next(const Frame& frame) {
             name = "X";
         }
 
-        file_.print("{} {:g} {:g} {:g}",
-            name, positions[i][0], positions[i][1], positions[i][2]
-        );
+        if (velocities) {// write velocities if included
+            const auto& velo = velocities.value();
+
+            file_.print("{} {:g} {:g} {:g} {:g} {:g} {:g}",
+                name, positions[i][0], positions[i][1], positions[i][2],
+                velo[i][0], velo[i][1], velo[i][2]
+            );
+        } else {
+            file_.print("{} {:g} {:g} {:g}",
+                name, positions[i][0], positions[i][1], positions[i][2]
+            );
+        }
 
         for (const auto& property: properties) {
             const auto& value = atom.get(property.name).value();
@@ -213,8 +227,12 @@ static bool contains_double_quote(std::string_view s) {
     return false;
 }
 
-std::string write_extended_comment_line(const Frame& frame, properties_list_t properties) {
+std::string write_extended_comment_line(const Frame& frame, const properties_list_t& properties) {
     std::string result = "Properties=species:S:1:pos:R:3";
+
+    if (frame.velocities()) {
+        result += ":velo:R:3";
+    }
 
     for (const auto& property: properties) {
         char type;
@@ -236,6 +254,8 @@ std::string write_extended_comment_line(const Frame& frame, properties_list_t pr
             type = 'R';
             count = 3;
             break;
+        default:
+            unreachable();
         }
 
         result += fmt::format(":{}:{}:{}", property.name, type, count);
@@ -299,6 +319,8 @@ std::string write_extended_comment_line(const Frame& frame, properties_list_t pr
                 result += fmt::format("\"{:g} {:g} {:g}\"", v[0], v[1], v[2]);
             }
             break;
+        default:
+            unreachable();
         }
     }
     return result;
@@ -314,7 +336,7 @@ static bool is_valid_property_name(const std::string& name) {
     }
 
     for (auto c: name) {
-        if (!(is_ascii_alphanumeric(c) || c == '_')) {
+        if (!is_ascii_alphanumeric(c) && c != '_') {
             return false;
         }
     }
@@ -389,7 +411,7 @@ properties_list_t get_atom_properties(const Frame& frame) {
             }
         }
 
-        auto& atom_properties = atom.properties();
+        const auto& atom_properties = atom.properties();
         if (atom_properties && (*atom_properties).size() > all_properties.size()) {
             // warn for properties defined on this atom but not on others
             for (const auto& property: *atom.properties()) {
@@ -414,7 +436,7 @@ properties_list_t get_atom_properties(const Frame& frame) {
     auto results = properties_list_t();
     results.reserve(all_properties.size());
     for (auto property: std::move(all_properties)) {
-        results.push_back({std::move(property.first), std::move(property.second)});
+        results.emplace_back(property.first, property.second);
     }
     return results;
 }
@@ -488,7 +510,7 @@ private:
             advance();
         }
 
-        auto start = current_;
+        const auto* start = current_;
         size_t size = 0;
         while (!done()) {
             if (check_for_quote && current() == quote) {
@@ -542,9 +564,9 @@ private:
 static UnitCell parse_cell(std::string_view lattice) {
     auto matrix = Matrix3D::zero();
     scan(lattice,
-        matrix[0][0], matrix[1][0], matrix[2][0],
-        matrix[0][1], matrix[1][1], matrix[2][1],
-        matrix[0][2], matrix[1][2], matrix[2][2]
+        matrix[0][0], matrix[0][1], matrix[0][2],
+        matrix[1][0], matrix[1][1], matrix[1][2],
+        matrix[2][0], matrix[2][1], matrix[2][2]
     );
     return UnitCell(matrix);
 }
@@ -643,18 +665,21 @@ static properties_list_t parse_property_list(std::string_view input) {
 }
 
 properties_list_t read_extended_comment_line(std::string_view line, Frame& frame) {
-    // only try to parse as extended XYZ if `Properties` is defined as expected
-    if (line.find("species:S:1:pos:R:3") == std::string::npos) {
+    // only try to parse as extended XYZ if `Properties` or `Lattice` are
+    // defined as expected
+    auto contains_properties = line.find("species:S:1:pos:R:3") != std::string::npos;
+    auto contains_lattice = line.find("Lattice") != std::string::npos;
+    if (!(contains_properties || contains_lattice)) {
         return {};
     }
-    auto properties = extended_xyz_parser(line).parse();
 
+    auto properties = extended_xyz_parser(line).parse();
     for (const auto& it: properties) {
         auto name = it.first;
         if (name == "Lattice" || name == "Properties") {
             continue;
         }
-        frame.set(std::string(name), std::move(it.second));
+        frame.set(std::string(name), it.second);
     }
 
     if (properties.count("Lattice") == 1) {
@@ -662,7 +687,13 @@ properties_list_t read_extended_comment_line(std::string_view line, Frame& frame
     }
 
     if (properties.count("Properties") == 1) {
-        return parse_property_list(properties.at("Properties").as_string());
+        auto props = properties.at("Properties").as_string();
+
+        if (props.find("velo") != std::string::npos) {
+            frame.add_velocities();
+        }
+
+        return parse_property_list(props);
     } else {
         return {};
     }
@@ -672,7 +703,7 @@ properties_list_t read_extended_comment_line(std::string_view line, Frame& frame
 // the expected type. If the files contains a valid `Properties=...`
 // description,throwing errors if the rest of the files does not follow the
 // description is fair game.
-void read_atomic_properties(const properties_list_t& properties, std::string_view line, Atom& atom) {
+void read_atomic_properties(const properties_list_t& properties, std::string_view line, Atom& atom, Vector3D& velocity) {
     for (const auto& property: properties) {
         if (property.type == Property::STRING) {
             std::string value;
@@ -697,10 +728,16 @@ void read_atomic_properties(const properties_list_t& properties, std::string_vie
             line.remove_prefix(count);
             atom.set(property.name, value);
         }  else if (property.type == Property::VECTOR3D) {
-            Vector3D value;
-            auto count = scan(line, value[0], value[1], value[2]);
-            line.remove_prefix(count);
-            atom.set(property.name, std::move(value));
+            if (property.name == "velo") {
+                auto count = scan(line, velocity[0], velocity[1], velocity[2]);
+                line.remove_prefix(count);
+            } else {
+                Vector3D value;
+                auto count = scan(line, value[0], value[1], value[2]);
+                atom.set(property.name, value);
+                line.remove_prefix(count);
+            }
+
         } else {
             unreachable();
         }
