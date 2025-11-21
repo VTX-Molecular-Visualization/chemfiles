@@ -192,7 +192,11 @@ void GROFormat::read_next(Frame& frame)
 		auto v3_x = parse<double>(box_values[7]) * 10;
 		auto v3_y = parse<double>(box_values[8]) * 10;
 
-		auto cell = UnitCell({ v1_x, v2_x, v3_x, 0.00, v2_y, v3_y, 0.00, 0.00, v3_z });
+		auto cell = UnitCell({
+			v1_x, 0.00, 0.00,
+			v2_x, v2_y, 0.00,
+			v3_x, v3_y, v3_z
+		});
 		frame.set_cell(cell);
 	}
 }
