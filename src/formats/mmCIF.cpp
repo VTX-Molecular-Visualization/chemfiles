@@ -234,11 +234,11 @@ void mmCIFFormat::init_chemical_conn_bond()
 	steps_positions_.push_back(reader_meta_data_.position);
 
 	if (chemical_conn_bond_map.find("atom_1") == chemical_conn_bond_map.end())
-		throw format_error("could not find _chemical_conn_bond.atom_1 in '{}'", file_.path());
+		throw format_error("could not find _chemical_conn_bond[dot]atom_1 in '{}'", file_.path());
 	if (chemical_conn_bond_map.find("atom_2") == chemical_conn_bond_map.end())
-		throw format_error("could not find _chemical_conn_bond.atom_2 in '{}'", file_.path());
+		throw format_error("could not find _chemical_conn_bond[dot]atom_2 in '{}'", file_.path());
 	if (chemical_conn_bond_map.find("type") == chemical_conn_bond_map.end())
-		throw format_error("could not find _chemical_conn_bond.type in '{}'", file_.path());
+		throw format_error("could not find _chemical_conn_bond[dot]type in '{}'", file_.path());
 
 	auto line = file_.readline();
 	reader_meta_data_.line = line;
@@ -257,10 +257,10 @@ void mmCIFFormat::init_atom_site()
 	steps_positions_.push_back(reader_meta_data_.position);
 
 	if (atom_site_map.find("type_symbol") == atom_site_map.end()) {
-		throw format_error("could not find _atom_site.type_symbol in '{}'", file_.path());
+		throw format_error("could not find _atom_site[dot]type_symbol in '{}'", file_.path());
 	}
 	if (atom_site_map.find("Cartn_x") == atom_site_map.end()) {
-		throw format_error("could not find _atom_site.Cartn_x in '{}'", file_.path());
+		throw format_error("could not find _atom_site[dot]Cartn_x in '{}'", file_.path());
 	}
 
 	// Do we have a special extension for multiple modes?
