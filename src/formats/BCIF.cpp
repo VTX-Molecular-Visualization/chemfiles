@@ -18,6 +18,9 @@
 #include <filesystem>
 #include <iostream>
 #include <iomanip>
+#include <unordered_set>
+#include <chrono>
+#include <thread>
 
 // Include msgpack headers
 #include <msgpack.hpp>
@@ -65,27 +68,99 @@ template<> const FormatMetadata& ::chemfiles::format_metadata<BCIFFormat>() {
     metadata.residues = true;
     return metadata;
 }
-namespace chemfiles {
 
+// Hash function for std::pair<std::string, std::string> used in ChemCompMap
+namespace std {
+    template<>
+    struct hash<std::pair<std::string, std::string>> {
+        size_t operator()(const std::pair<std::string, std::string>& p) const {
+            auto h1 = std::hash<std::string>{}(p.first);
+            auto h2 = std::hash<std::string>{}(p.second);
+            // Combine hash values using a simple approach
+            return h1 ^ (h2 << 1);
+        }
+    };
+    template<>
+    struct hash<std::pair<size_t, size_t>> {
+        size_t operator()(const std::pair<size_t, size_t>& p) const {
+            auto h1 = std::hash<size_t>{}(p.first);
+            auto h2 = std::hash<size_t>{}(p.second);
+            // Combine hash values using a simple approach
+            return h1 ^ (h2 << 1);
+        }
+    };
+}
+namespace chemfiles {
+    class StringCollection
+    {
+    public:
+        StringCollection() = default;
+        StringCollection(
+            std::vector<int32_t> indices,
+            std::vector<int32_t> offsets,
+            std::string char_pool
+        ) : _data(std::make_shared<Data>(Data{ std::move(indices), std::move(offsets), std::move(char_pool) }))
+        { }
+        StringCollection(const StringCollection&) = default;
+        StringCollection& operator=(const StringCollection&) = default;
+        StringCollection( StringCollection&&) = default;
+        StringCollection& operator=( StringCollection&&) = default;
+        std::string operator[](const size_t& idx) const
+        {
+            if (idx >= _data->indices.size()) return "";
+            auto& actual_index = _data->indices[idx];
+            if (actual_index < 0 || static_cast<size_t>(actual_index)+1 >= _data->offsets.size()) return "";
+
+            size_t start = static_cast<size_t>(_data->offsets[actual_index]);
+            size_t end = static_cast<size_t>(_data->offsets[actual_index + 1]);
+            if (start <= end && end <= _data->char_pool.size())
+                return _data->char_pool.substr(start, end - start);
+            return "";
+        }
+        size_t size() const
+        {
+            return _data->indices.size();
+        }
+        bool empty() const 
+        {
+            return _data->char_pool.empty();
+        }
+        bool none_other_than(const std::string& char_list) const
+        {
+            for (auto& it_char : _data->char_pool)
+            {
+                if (char_list.find(it_char) == std::string::npos)
+                    return false;
+            }
+            return true;
+        }
+    private:
+        struct Data {
+            std::vector<int32_t> indices;
+            std::vector<int32_t> offsets;
+            std::string char_pool;
+        };
+        std::shared_ptr<Data> _data = std::make_shared<Data>();
+    };
     struct BCIFFormat::BCIFData {
         // Atom site data
         std::vector<double> atom_x;
         std::vector<double> atom_y;
         std::vector<double> atom_z;
-        std::vector<std::string> atom_type_symbol;
-        std::vector<std::string> atom_label;        // label_atom_id (primary)
-        std::vector<std::string> auth_atom_label;   // auth_atom_id (fallback)
+        StringCollection atom_type_symbol;
+        StringCollection atom_label;        // label_atom_id (primary)
+        StringCollection auth_atom_label;   // auth_atom_id (fallback)
         std::vector<int32_t> atom_id;
 
         // Residue data (from _atom_site category)
-        std::vector<std::string> residue_name;      // label_comp_id
+        StringCollection  residue_name;      // label_comp_id
         std::vector<int32_t> residue_id;            // label_seq_id (primary)
-        std::vector<std::string> chain_id;          // label_asym_id (primary)
-        std::vector<std::string> insertion_code;    // pdbx_PDB_ins_code
+        StringCollection chain_id;          // label_asym_id (primary)
+        StringCollection insertion_code;    // pdbx_PDB_ins_code
 
         // Author-provided identifiers (stored for round-trip writing)
         std::vector<int32_t> auth_residue_id;       // auth_seq_id
-        std::vector<std::string> auth_chain_id;     // auth_asym_id
+        StringCollection  auth_chain_id;     // auth_asym_id
 
         // Cell data
         double cell_length_a = 0.0;
@@ -101,11 +176,9 @@ namespace chemfiles {
         // Model tracking
         size_t num_models = 1;
 
-        // Secondary structure data (from _struct_conf category)
-        // Maps (chain_id, beg_seq_id) -> (chain_id, end_seq_id, conf_type_id)
-        using SecondaryStructureKey = std::pair<std::string, int32_t>;  // chain, resid
-        using SecondaryStructureRange = std::tuple<std::string, int32_t, std::string>;  // end_chain, end_resid, type
-        std::map<SecondaryStructureKey, SecondaryStructureRange> secondary_structures;
+        // Secondary structure data
+        using ChainNameResId = std::pair<std::string, uint32_t>;
+        std::map<ChainNameResId, const char*> secondary_structure_map;
 
         // Bond data (from _chem_comp_bond category)
         // Component-level bond definitions (template bonds for residue types)
@@ -119,6 +192,13 @@ namespace chemfiles {
             int32_t pdbx_ordinal = 0;         // For round-trip
         };
         std::vector<ChemCompBond> chem_comp_bonds;
+        using AtomName = std::string;
+        using ResName = std::string;
+        using BondOrder = std::string;
+        using ChemCompMapKey = std::pair<ResName, AtomName>;
+        using ChemCompMapValue = std::pair<AtomName, BondOrder>;
+        using ChemCompMap = std::unordered_multimap<ChemCompMapKey, ChemCompMapValue>;
+        ChemCompMap chem_comp_bonds_map;
 
         // Bond data (from _struct_conn category)
         // Instance-specific bonds (inter-residue, metal coordination, disulfide, etc.)
@@ -135,12 +215,20 @@ namespace chemfiles {
             std::string pdbx_value_order;         // Bond order
         };
         std::vector<StructConn> struct_conns;
+        
+        using ChaineName = std::string;
+        using SeqId = int32_t;
+        using StructConnMapKey = std::tuple<ChaineName, ResName, SeqId, AtomName>;
+        using StructConnMap = std::map<StructConnMapKey, StructConn*>;
+        StructConnMap struct_conn_map;
     };
     void BCIFFormat::BCIFDataDtor::operator()(BCIFFormat::BCIFData* ptr) noexcept{
         delete ptr;
     };
 
 }
+
+
 namespace
 {
 
@@ -158,9 +246,10 @@ namespace
         "2-7 ribbon/helix",
         "polyproline",
     };
+    static const char* PDB_BETA_SHEET = "extended";
 
     // Convert BCIF/mmCIF conf_type_id to PDB-style secondary structure name
-    std::string bcif_to_pdb_secondary_structure(const std::string& conf_type_id) {
+    const char* bcif_to_pdb_secondary_structure(const std::string& conf_type_id) {
         // BCIF/mmCIF conf_type_id values from mmCIF dictionary
         // See: http://mmcif.wwpdb.org/dictionaries/mmcif_pdbx_v50.dic/Items/_struct_conf.conf_type_id.html
 
@@ -185,7 +274,7 @@ namespace
         if (conf_type_id.find("TURN") == 0) return "turn";
 
         // If unknown, return the original value
-        return conf_type_id;
+        return nullptr;
     }
 
     // Convert PDB-style secondary structure name back to BCIF conf_type_id
@@ -266,10 +355,11 @@ namespace msgpack {
         std::vector<int32_t> decode_run_length(const std::vector<int32_t>& data, int32_t src_size);
         std::vector<std::string> decode_string_array(const msgpack::object & encoding, const msgpack::object & data);
 
-        std::vector<int32_t> decode_integer_column(const msgpack::object & column);
         std::vector<int32_t> decode_mask(const msgpack::object & mask_obj);
-        std::vector<double> decode_float_column(const msgpack::object & column);
-        std::vector<std::string> decode_string_column(const msgpack::object & column);
+        void decode_column(const msgpack::object & column, std::vector<double>&);
+        void decode_column(const msgpack::object & column, std::vector<int32_t>&);
+        void decode_column(const msgpack::object & column, std::vector<std::string>&);
+        void decode_column(const msgpack::object & column, StringCollection&);
 
         void parse_atom_site(const msgpack::object & category, BCIFData & data);
         void parse_cell(const msgpack::object & category, BCIFData & data);
@@ -304,7 +394,6 @@ namespace msgpack {
             const std::string& column_name, const std::vector<std::string>& data);
         void encode_integer_column(msgpack::packer<msgpack::sbuffer>& pk,
             const std::string& column_name, const std::vector<int32_t>& data);
-
 
         // =============================================================================
         // Free function implementations in msgpack namespace
@@ -380,8 +469,7 @@ namespace msgpack {
 
                 // Similarly for chain IDs (though less common)
                 bool label_chain_invalid = !data.chain_id.empty() &&
-                    std::all_of(data.chain_id.begin(), data.chain_id.end(),
-                        [](const std::string& s) { return s.empty() || s == "?" || s == "."; });
+                    data.chain_id.none_other_than("?.");
 
                 if (label_chain_invalid && !data.auth_chain_id.empty()) {
                     // Use auth_asym_id when label_asym_id is invalid
@@ -405,7 +493,7 @@ namespace msgpack {
             }
         }
 
-        std::vector<int32_t> apply_mask_to_integers(const std::vector<int32_t>& data,
+        std::vector<int32_t> apply_mask(const std::vector<int32_t>& data,
                                                       const std::vector<int32_t>& mask) {
             // Expand data array using mask
             // Mask: 0=present (use data), 1/2=missing (use default)
@@ -431,7 +519,7 @@ namespace msgpack {
             return result;
         }
 
-        std::vector<std::string> apply_mask_to_strings(const std::vector<std::string>& data,
+        std::vector<std::string> apply_mask(const std::vector<std::string>& data,
                                                          const std::vector<int32_t>& mask) {
             // Expand data array using mask
             // Mask: 0=present (use data), 1/2=missing (use "?")
@@ -456,6 +544,7 @@ namespace msgpack {
 
             return result;
         }
+        
         namespace
         {
             inline void get_name_and_data(msgpack::object_map& col_map, std::string& column_name, msgpack::object& data_obj, bool& found_data, msgpack::object& mask_obj, bool& has_mask)
@@ -488,78 +577,78 @@ namespace msgpack {
 
                 // Decode based on column name
                 if (column_name == "Cartn_x") {
-                    data.atom_x = decode_float_column(data_obj);
+                    decode_column(data_obj, data.atom_x);
                     // Masks for float columns would need special handling
                 }
                 else if (column_name == "Cartn_y") {
-                    data.atom_y = decode_float_column(data_obj);
+                    decode_column(data_obj, data.atom_y);
                 }
                 else if (column_name == "Cartn_z") {
-                    data.atom_z = decode_float_column(data_obj);
+                    decode_column(data_obj, data.atom_z);
                 }
                 else if (column_name == "type_symbol") {
-                    data.atom_type_symbol = decode_string_column(data_obj);
+                    decode_column(data_obj, data.atom_type_symbol);
                     if (has_mask && !mask.empty()) {
-                        data.atom_type_symbol = apply_mask_to_strings(data.atom_type_symbol, mask);
+                        //data.atom_type_symbol = apply_mask(data.atom_type_symbol, mask);
                     }
                 }
                 else if (column_name == "label_atom_id") {
-                    data.atom_label = decode_string_column(data_obj);
+                    decode_column(data_obj, data.atom_label);
                     if (has_mask && !mask.empty()) {
-                        data.atom_label = apply_mask_to_strings(data.atom_label, mask);
+                        //data.atom_label = apply_mask(data.atom_label, mask);
                     }
                 }
                 else if (column_name == "auth_atom_id") {
-                    data.auth_atom_label = decode_string_column(data_obj);
+                    decode_column(data_obj, data.auth_atom_label);
                     if (has_mask && !mask.empty()) {
-                        data.auth_atom_label = apply_mask_to_strings(data.auth_atom_label, mask);
+                        //data.auth_atom_label = apply_mask(data.auth_atom_label, mask);
                     }
                 }
                 else if (column_name == "id") {
-                    data.atom_id = decode_integer_column(data_obj);
+                    decode_column(data_obj, data.atom_id);
                     if (has_mask && !mask.empty()) {
-                        data.atom_id = apply_mask_to_integers(data.atom_id, mask);
+                        data.atom_id = apply_mask(data.atom_id, mask);
                     }
                 }
                 // Residue information
                 else if (column_name == "label_comp_id") {
-                    data.residue_name = decode_string_column(data_obj);
+                    decode_column(data_obj, data.residue_name);
                     if (has_mask && !mask.empty()) {
-                        data.residue_name = apply_mask_to_strings(data.residue_name, mask);
+                        //data.residue_name = apply_mask(data.residue_name, mask);
                     }
                 }
                 else if (column_name == "label_seq_id") {
                     // Use label_seq_id as primary residue ID (matches mmCIF implementation)
-                    data.residue_id = decode_integer_column(data_obj);
+                    decode_column(data_obj, data.residue_id);
                     if (has_mask && !mask.empty()) {
-                        data.residue_id = apply_mask_to_integers(data.residue_id, mask);
+                        data.residue_id = apply_mask(data.residue_id, mask);
                     }
                 }
                 else if (column_name == "auth_seq_id") {
                     // Store auth_seq_id for round-trip writing
-                    data.auth_residue_id = decode_integer_column(data_obj);
+                    decode_column(data_obj, data.auth_residue_id);
                     if (has_mask && !mask.empty()) {
-                        data.auth_residue_id = apply_mask_to_integers(data.auth_residue_id, mask);
+                        data.auth_residue_id = apply_mask(data.auth_residue_id, mask);
                     }
                 }
                 else if (column_name == "label_asym_id") {
                     // Use label_asym_id as primary chain ID (matches mmCIF implementation)
-                    data.chain_id = decode_string_column(data_obj);
+                    decode_column(data_obj, data.chain_id);
                     if (has_mask && !mask.empty()) {
-                        data.chain_id = apply_mask_to_strings(data.chain_id, mask);
+                        //data.chain_id = apply_mask(data.chain_id, mask);
                     }
                 }
                 else if (column_name == "auth_asym_id") {
                     // Store auth_asym_id for round-trip writing
-                    data.auth_chain_id = decode_string_column(data_obj);
+                    decode_column(data_obj, data.auth_chain_id);
                     if (has_mask && !mask.empty()) {
-                        data.auth_chain_id = apply_mask_to_strings(data.auth_chain_id, mask);
+                        //data.auth_chain_id = apply_mask(data.auth_chain_id, mask);
                     }
                 }
                 else if (column_name == "pdbx_PDB_ins_code") {
-                    data.insertion_code = decode_string_column(data_obj);
+                    decode_column(data_obj, data.insertion_code);
                     if (has_mask && !mask.empty()) {
-                        data.insertion_code = apply_mask_to_strings(data.insertion_code, mask);
+                        //data.insertion_code = apply_mask(data.insertion_code, mask);
                     }
                 }
             }
@@ -606,7 +695,6 @@ namespace msgpack {
                 parse_atom_site_column(mask_obj, has_mask, data_obj, column_name, data);
             }
         }
-
         void parse_cell(const msgpack::object & category, BCIFData & data) {
             // Get columns array from category
             msgpack::object columns_obj;
@@ -678,7 +766,7 @@ namespace msgpack {
                     }
                 } else {
                     // Encoded data (map with encoding field)
-                    values = decode_float_column(data_obj);
+                     decode_column(data_obj, values);
                 }
 
                 if (values.empty()) {
@@ -734,63 +822,63 @@ namespace msgpack {
 
                 // Parse the columns we care about
                 if (column_name == "conf_type_id") {
-                    struct_data.conf_type_id = decode_string_column(data_obj);
+                    decode_column(data_obj, struct_data.conf_type_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.conf_type_id = apply_mask_to_strings(struct_data.conf_type_id, mask);
+                        struct_data.conf_type_id = apply_mask(struct_data.conf_type_id, mask);
                     }
                 }
                 else if (column_name == "pdbx_PDB_helix_class") {
-                    struct_data.pdbx_PDB_helix_class = decode_integer_column(data_obj);
+                    decode_column(data_obj, struct_data.pdbx_PDB_helix_class);
                     if (has_mask && !mask.empty()) {
-                        struct_data.pdbx_PDB_helix_class = apply_mask_to_integers(struct_data.pdbx_PDB_helix_class, mask);
+                        struct_data.pdbx_PDB_helix_class = apply_mask(struct_data.pdbx_PDB_helix_class, mask);
                     }
                 }
                 else if (column_name == "beg_label_asym_id") {
-                    struct_data.beg_label_asym_id = decode_string_column(data_obj);
+                    decode_column(data_obj, struct_data.beg_label_asym_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.beg_label_asym_id = apply_mask_to_strings(struct_data.beg_label_asym_id, mask);
+                        struct_data.beg_label_asym_id = apply_mask(struct_data.beg_label_asym_id, mask);
                     }
                 }
                 else if (column_name == "beg_label_seq_id") {
-                    struct_data.beg_label_seq_id = decode_integer_column(data_obj);
+                    decode_column(data_obj, struct_data.beg_label_seq_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.beg_label_seq_id = apply_mask_to_integers(struct_data.beg_label_seq_id, mask);
+                        struct_data.beg_label_seq_id = apply_mask(struct_data.beg_label_seq_id, mask);
                     }
                 }
                 else if (column_name == "end_label_asym_id") {
-                    struct_data.end_label_asym_id = decode_string_column(data_obj);
+                    decode_column(data_obj, struct_data.end_label_asym_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.end_label_asym_id = apply_mask_to_strings(struct_data.end_label_asym_id, mask);
+                        struct_data.end_label_asym_id = apply_mask(struct_data.end_label_asym_id, mask);
                     }
                 }
                 else if (column_name == "end_label_seq_id") {
-                    struct_data.end_label_seq_id = decode_integer_column(data_obj);
+                    decode_column(data_obj, struct_data.end_label_seq_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.end_label_seq_id = apply_mask_to_integers(struct_data.end_label_seq_id, mask);
+                        struct_data.end_label_seq_id = apply_mask(struct_data.end_label_seq_id, mask);
                     }
                 }
                 else if (column_name == "beg_auth_asym_id") {
-                    struct_data.beg_auth_asym_id = decode_string_column(data_obj);
+                    decode_column(data_obj, struct_data.beg_auth_asym_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.beg_auth_asym_id = apply_mask_to_strings(struct_data.beg_auth_asym_id, mask);
+                        struct_data.beg_auth_asym_id = apply_mask(struct_data.beg_auth_asym_id, mask);
                     }
                 }
                 else if (column_name == "beg_auth_seq_id") {
-                    struct_data.beg_auth_seq_id = decode_integer_column(data_obj);
+                    decode_column(data_obj, struct_data.beg_auth_seq_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.beg_auth_seq_id = apply_mask_to_integers(struct_data.beg_auth_seq_id, mask);
+                        struct_data.beg_auth_seq_id = apply_mask(struct_data.beg_auth_seq_id, mask);
                     }
                 }
                 else if (column_name == "end_auth_asym_id") {
-                    struct_data.end_auth_asym_id = decode_string_column(data_obj);
+                    decode_column(data_obj, struct_data.end_auth_asym_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.end_auth_asym_id = apply_mask_to_strings(struct_data.end_auth_asym_id, mask);
+                        struct_data.end_auth_asym_id = apply_mask(struct_data.end_auth_asym_id, mask);
                     }
                 }
                 else if (column_name == "end_auth_seq_id") {
-                    struct_data.end_auth_seq_id = decode_integer_column(data_obj);
+                    decode_column(data_obj, struct_data.end_auth_seq_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.end_auth_seq_id = apply_mask_to_integers(struct_data.end_auth_seq_id, mask);
+                        struct_data.end_auth_seq_id = apply_mask(struct_data.end_auth_seq_id, mask);
                     }
                 }
             }
@@ -829,7 +917,7 @@ namespace msgpack {
 
                     // Store the secondary structure range
                     // Determine the secondary structure type
-                    std::string pdb_ss_type;
+                    const char* pdb_ss_type = nullptr;
 
                     // Check if this is a helix with pdbx_PDB_helix_class specified
                     if (i < struct_data.pdbx_PDB_helix_class.size() && struct_data.pdbx_PDB_helix_class[i] >= 1 && struct_data.pdbx_PDB_helix_class[i] <= 10) {
@@ -841,9 +929,12 @@ namespace msgpack {
                         pdb_ss_type = bcif_to_pdb_secondary_structure(struct_data.conf_type_id[i]);
                     }
 
-                    BCIFData::SecondaryStructureKey key = std::make_pair(beg_chain, beg_resid);
-                    BCIFData::SecondaryStructureRange range = std::make_tuple(end_chain, end_resid, pdb_ss_type);
-                    data.secondary_structures[key] = range;
+
+                    if (beg_chain == end_chain)
+                        for (size_t resid = beg_resid; resid <= static_cast<size_t>(end_resid); resid++)
+                        {
+                            data.secondary_structure_map[BCIFFormat::BCIFData::ChainNameResId(beg_chain, static_cast<uint32_t>(resid))] = pdb_ss_type;
+                        }
                 }
             }
         }
@@ -917,51 +1008,51 @@ namespace msgpack {
 
                 // Parse the columns we care about
                 if (column_name == "beg_label_asym_id") {
-                    struct_data.beg_label_asym_id = decode_string_column(data_obj);
+                    decode_column(data_obj, struct_data.beg_label_asym_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.beg_label_asym_id = apply_mask_to_strings(struct_data.beg_label_asym_id, mask);
+                        struct_data.beg_label_asym_id = apply_mask(struct_data.beg_label_asym_id, mask);
                     }
                 }
                 else if (column_name == "beg_label_seq_id") {
-                    struct_data.beg_label_seq_id = decode_integer_column(data_obj);
+                    decode_column(data_obj, struct_data.beg_label_seq_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.beg_label_seq_id = apply_mask_to_integers(struct_data.beg_label_seq_id, mask);
+                        struct_data.beg_label_seq_id = apply_mask(struct_data.beg_label_seq_id, mask);
                     }
                 }
                 else if (column_name == "end_label_asym_id") {
-                    struct_data.end_label_asym_id = decode_string_column(data_obj);
+                    decode_column(data_obj, struct_data.end_label_asym_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.end_label_asym_id = apply_mask_to_strings(struct_data.end_label_asym_id, mask);
+                        struct_data.end_label_asym_id = apply_mask(struct_data.end_label_asym_id, mask);
                     }
                 }
                 else if (column_name == "end_label_seq_id") {
-                    struct_data.end_label_seq_id = decode_integer_column(data_obj);
+                    decode_column(data_obj, struct_data.end_label_seq_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.end_label_seq_id = apply_mask_to_integers(struct_data.end_label_seq_id, mask);
+                        struct_data.end_label_seq_id = apply_mask(struct_data.end_label_seq_id, mask);
                     }
                 }
                 else if (column_name == "beg_auth_asym_id") {
-                    struct_data.beg_auth_asym_id = decode_string_column(data_obj);
+                    decode_column(data_obj, struct_data.beg_auth_asym_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.beg_auth_asym_id = apply_mask_to_strings(struct_data.beg_auth_asym_id, mask);
+                        struct_data.beg_auth_asym_id = apply_mask(struct_data.beg_auth_asym_id, mask);
                     }
                 }
                 else if (column_name == "beg_auth_seq_id") {
-                    struct_data.beg_auth_seq_id = decode_integer_column(data_obj);
+                    decode_column(data_obj, struct_data.beg_auth_seq_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.beg_auth_seq_id = apply_mask_to_integers(struct_data.beg_auth_seq_id, mask);
+                        struct_data.beg_auth_seq_id = apply_mask(struct_data.beg_auth_seq_id, mask);
                     }
                 }
                 else if (column_name == "end_auth_asym_id") {
-                    struct_data.end_auth_asym_id = decode_string_column(data_obj);
+                    decode_column(data_obj, struct_data.end_auth_asym_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.end_auth_asym_id = apply_mask_to_strings(struct_data.end_auth_asym_id, mask);
+                        struct_data.end_auth_asym_id = apply_mask(struct_data.end_auth_asym_id, mask);
                     }
                 }
                 else if (column_name == "end_auth_seq_id") {
-                    struct_data.end_auth_seq_id = decode_integer_column(data_obj);
+                    decode_column(data_obj, struct_data.end_auth_seq_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.end_auth_seq_id = apply_mask_to_integers(struct_data.end_auth_seq_id, mask);
+                        struct_data.end_auth_seq_id = apply_mask(struct_data.end_auth_seq_id, mask);
                     }
                 }
             }
@@ -997,10 +1088,11 @@ namespace msgpack {
                         end_resid = struct_data.end_auth_seq_id[i];
                     }
 
-                    // Store the beta sheet range (all sheets use "extended" as the secondary structure type)
-                    BCIFData::SecondaryStructureKey key = std::make_pair(beg_chain, beg_resid);
-                    BCIFData::SecondaryStructureRange range = std::make_tuple(end_chain, end_resid, "extended");
-                    data.secondary_structures[key] = range;
+                    if (beg_chain == end_chain)
+                        for (size_t resid = beg_resid; resid <= static_cast<size_t>(end_resid); resid++)
+                        {
+                            data.secondary_structure_map[std::make_pair(beg_chain, static_cast<uint32_t>(resid))] = PDB_BETA_SHEET;
+                        }
                 }
             }
         }
@@ -1073,49 +1165,50 @@ namespace msgpack {
 
                 // Parse the columns relevant to us
                 if (column_name == "comp_id") {
-                    bond_data.comp_id = decode_string_column(data_obj);
+                    decode_column(data_obj, bond_data.comp_id);
                     if (has_mask && !mask.empty()) {
-                        bond_data.comp_id = apply_mask_to_strings(bond_data.comp_id, mask);
+                        bond_data.comp_id = apply_mask(bond_data.comp_id, mask);
                     }
                 }
                 else if (column_name == "atom_id_1") {
-                    bond_data.atom_id_1 = decode_string_column(data_obj);
+                    decode_column(data_obj, bond_data.atom_id_1);
                     if (has_mask && !mask.empty()) {
-                        bond_data.atom_id_1 = apply_mask_to_strings(bond_data.atom_id_1, mask);
+                        bond_data.atom_id_1 = apply_mask(bond_data.atom_id_1, mask);
                     }
                 }
                 else if (column_name == "atom_id_2") {
-                    bond_data.atom_id_2 = decode_string_column(data_obj);
+                    decode_column(data_obj, bond_data.atom_id_2);
                     if (has_mask && !mask.empty()) {
-                        bond_data.atom_id_2 = apply_mask_to_strings(bond_data.atom_id_2, mask);
+                        bond_data.atom_id_2 = apply_mask(bond_data.atom_id_2, mask);
                     }
                 }
                 else if (column_name == "value_order") {
-                    bond_data.value_order = decode_string_column(data_obj);
+                    decode_column(data_obj, bond_data.value_order);
                     if (has_mask && !mask.empty()) {
-                        bond_data.value_order = apply_mask_to_strings(bond_data.value_order, mask);
+                        bond_data.value_order = apply_mask(bond_data.value_order, mask);
                     }
                 }
                 else if (column_name == "pdbx_aromatic_flag") {
-                    bond_data.pdbx_aromatic_flag = decode_string_column(data_obj);
+                    decode_column(data_obj, bond_data.pdbx_aromatic_flag);
                     if (has_mask && !mask.empty()) {
-                        bond_data.pdbx_aromatic_flag = apply_mask_to_strings(bond_data.pdbx_aromatic_flag, mask);
+                        bond_data.pdbx_aromatic_flag = apply_mask(bond_data.pdbx_aromatic_flag, mask);
                     }
                 }
                 else if (column_name == "pdbx_stereo_config") {
-                    bond_data.pdbx_stereo_config = decode_string_column(data_obj);
+                    decode_column(data_obj, bond_data.pdbx_stereo_config);
                     if (has_mask && !mask.empty()) {
-                        bond_data.pdbx_stereo_config = apply_mask_to_strings(bond_data.pdbx_stereo_config, mask);
+                        bond_data.pdbx_stereo_config = apply_mask(bond_data.pdbx_stereo_config, mask);
                     }
                 }
                 else if (column_name == "pdbx_ordinal") {
-                    bond_data.pdbx_ordinal = decode_integer_column(data_obj);
+                    decode_column(data_obj, bond_data.pdbx_ordinal);
                     if (has_mask && !mask.empty()) {
-                        bond_data.pdbx_ordinal = apply_mask_to_integers(bond_data.pdbx_ordinal, mask);
+                        bond_data.pdbx_ordinal = apply_mask(bond_data.pdbx_ordinal, mask);
                     }
                 }
             }
-            inline void generate_bonds(const ChemCompBondData& bond_data, std::vector<BCIFFormat::BCIFData::ChemCompBond>& out)
+
+            inline void generate_bonds(const ChemCompBondData& bond_data, std::vector<BCIFFormat::BCIFData::ChemCompBond>& out, BCIFFormat::BCIFData::ChemCompMap& map)
             {
                 // Build the bond list
                 size_t num_entries = bond_data.comp_id.size();
@@ -1130,6 +1223,15 @@ namespace msgpack {
                     bond.pdbx_aromatic_flag = (i < bond_data.pdbx_aromatic_flag.size()) ? bond_data.pdbx_aromatic_flag[i] : "";
                     bond.pdbx_stereo_config = (i < bond_data.pdbx_stereo_config.size()) ? bond_data.pdbx_stereo_config[i] : "";
                     bond.pdbx_ordinal = (i < bond_data.pdbx_ordinal.size()) ? bond_data.pdbx_ordinal[i] : 0;
+
+                    // Insert bond into map (bidirectional: atom1->atom2 and atom2->atom1)
+                    BCIFFormat::BCIFData::ChemCompMapKey key1{ bond.comp_id, bond.atom_id_1 };
+                    BCIFFormat::BCIFData::ChemCompMapValue val1{ bond.atom_id_2, bond.value_order };
+                    BCIFFormat::BCIFData::ChemCompMapKey key2{ bond.comp_id, bond.atom_id_2 };
+                    BCIFFormat::BCIFData::ChemCompMapValue val2{ bond.atom_id_1, bond.value_order };
+
+                    map.insert({ key1, val1 });
+                    map.insert({ key2, val2 });
                 }
 
             }
@@ -1177,7 +1279,7 @@ namespace msgpack {
 
                 parse_chem_comp_bond_column(column_name, data_obj, mask_obj, has_mask, bond_data);
             }
-            generate_bonds(bond_data, data.chem_comp_bonds);
+            generate_bonds(bond_data, data.chem_comp_bonds, data.chem_comp_bonds_map);
         }
 
         namespace
@@ -1196,10 +1298,11 @@ namespace msgpack {
                 std::vector<std::string> pdbx_value_order;
 
             };
-            inline void generate_structconn(const StructConnData& struct_data, std::vector<BCIFFormat::BCIFData::StructConn>& out)
+            inline void generate_structconn(const StructConnData& struct_data, std::vector<BCIFFormat::BCIFData::StructConn>& out, BCIFFormat::BCIFData::StructConnMap& map)
             {
                 // Build struct_conn entries
                 size_t num_conns = struct_data.conn_type_id.size();
+                out.reserve(num_conns);
                 for (size_t i = 0; i < num_conns; ++i) {
                     out.push_back({});
                     BCIFData::StructConn& conn = out.back();
@@ -1213,6 +1316,12 @@ namespace msgpack {
                     conn.ptnr2.label_seq_id = (i < struct_data.ptnr2.auth_seq_id.size()) ? struct_data.ptnr2.auth_seq_id[i] : -1;
                     conn.ptnr2.label_atom_id = (i < struct_data.ptnr2.label_atom_id.size()) ? struct_data.ptnr2.label_atom_id[i] : "";
                     conn.pdbx_value_order = (i < struct_data.pdbx_value_order.size()) ? struct_data.pdbx_value_order[i] : "";
+                    // WIP
+                    BCIFFormat::BCIFData::StructConnMapKey k1{ conn.ptnr1.label_asym_id , conn.ptnr1.label_comp_id , conn.ptnr1.label_seq_id, conn.ptnr1.label_atom_id};
+                    BCIFFormat::BCIFData::StructConnMapKey k2{ conn.ptnr2.label_asym_id , conn.ptnr2.label_comp_id , conn.ptnr2.label_seq_id, conn.ptnr2.label_atom_id};
+                    map[k1] = &conn;
+                    map[k2] = &conn;
+                    // !WIP
                 }
             }
             inline void parse_struct_conn_columns(const std::string& column_name, const msgpack::object& data_obj, const msgpack::object& mask_obj, const bool& has_mask, StructConnData& struct_data)
@@ -1225,63 +1334,63 @@ namespace msgpack {
 
                 // Parse the columns we care about
                 if (column_name == "conn_type_id") {
-                    struct_data.conn_type_id = decode_string_column(data_obj);
+                    decode_column(data_obj, struct_data.conn_type_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.conn_type_id = apply_mask_to_strings(struct_data.conn_type_id, mask);
+                        struct_data.conn_type_id = apply_mask(struct_data.conn_type_id, mask);
                     }
                 }
                 else if (column_name == "ptnr1_auth_asym_id") {
-                    struct_data.ptnr1.auth_asym_id = decode_string_column(data_obj);
+                    decode_column(data_obj, struct_data.ptnr1.auth_asym_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.ptnr1.auth_asym_id = apply_mask_to_strings(struct_data.ptnr1.auth_asym_id, mask);
+                        struct_data.ptnr1.auth_asym_id = apply_mask(struct_data.ptnr1.auth_asym_id, mask);
                     }
                 }
                 else if (column_name == "ptnr1_auth_comp_id") {
-                    struct_data.ptnr1.auth_comp_id = decode_string_column(data_obj);
+                    decode_column(data_obj, struct_data.ptnr1.auth_comp_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.ptnr1.auth_comp_id = apply_mask_to_strings(struct_data.ptnr1.auth_comp_id, mask);
+                        struct_data.ptnr1.auth_comp_id = apply_mask(struct_data.ptnr1.auth_comp_id, mask);
                     }
                 }
                 else if (column_name == "ptnr1_auth_seq_id") {
-                    struct_data.ptnr1.auth_seq_id = decode_integer_column(data_obj);
+                    decode_column(data_obj, struct_data.ptnr1.auth_seq_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.ptnr1.auth_seq_id = apply_mask_to_integers(struct_data.ptnr1.auth_seq_id, mask);
+                        struct_data.ptnr1.auth_seq_id = apply_mask(struct_data.ptnr1.auth_seq_id, mask);
                     }
                 }
                 else if (column_name == "ptnr1_label_atom_id") {
-                    struct_data.ptnr1.label_atom_id = decode_string_column(data_obj);
+                    decode_column(data_obj, struct_data.ptnr1.label_atom_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.ptnr1.label_atom_id = apply_mask_to_strings(struct_data.ptnr1.label_atom_id, mask);
+                        struct_data.ptnr1.label_atom_id = apply_mask(struct_data.ptnr1.label_atom_id, mask);
                     }
                 }
                 else if (column_name == "ptnr2_auth_asym_id") {
-                    struct_data.ptnr2.auth_asym_id = decode_string_column(data_obj);
+                    decode_column(data_obj, struct_data.ptnr2.auth_asym_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.ptnr2.auth_asym_id = apply_mask_to_strings(struct_data.ptnr2.auth_asym_id, mask);
+                        struct_data.ptnr2.auth_asym_id = apply_mask(struct_data.ptnr2.auth_asym_id, mask);
                     }
                 }
                 else if (column_name == "ptnr2_auth_comp_id") {
-                    struct_data.ptnr2.auth_comp_id = decode_string_column(data_obj);
+                    decode_column(data_obj, struct_data.ptnr2.auth_comp_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.ptnr2.auth_comp_id = apply_mask_to_strings(struct_data.ptnr2.auth_comp_id, mask);
+                        struct_data.ptnr2.auth_comp_id = apply_mask(struct_data.ptnr2.auth_comp_id, mask);
                     }
                 }
                 else if (column_name == "ptnr2_auth_seq_id") {
-                    struct_data.ptnr2.auth_seq_id = decode_integer_column(data_obj);
+                    decode_column(data_obj, struct_data.ptnr2.auth_seq_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.ptnr2.auth_seq_id = apply_mask_to_integers(struct_data.ptnr2.auth_seq_id, mask);
+                        struct_data.ptnr2.auth_seq_id = apply_mask(struct_data.ptnr2.auth_seq_id, mask);
                     }
                 }
                 else if (column_name == "ptnr2_label_atom_id") {
-                    struct_data.ptnr2.label_atom_id = decode_string_column(data_obj);
+                    decode_column(data_obj, struct_data.ptnr2.label_atom_id);
                     if (has_mask && !mask.empty()) {
-                        struct_data.ptnr2.label_atom_id = apply_mask_to_strings(struct_data.ptnr2.label_atom_id, mask);
+                        struct_data.ptnr2.label_atom_id = apply_mask(struct_data.ptnr2.label_atom_id, mask);
                     }
                 }
                 else if (column_name == "pdbx_value_order") {
-                    struct_data.pdbx_value_order = decode_string_column(data_obj);
+                    decode_column(data_obj, struct_data.pdbx_value_order);
                     if (has_mask && !mask.empty()) {
-                        struct_data.pdbx_value_order = apply_mask_to_strings(struct_data.pdbx_value_order, mask);
+                        struct_data.pdbx_value_order = apply_mask(struct_data.pdbx_value_order, mask);
                     }
                 }
             }
@@ -1330,7 +1439,7 @@ namespace msgpack {
                 }
                 parse_struct_conn_columns(column_name, data_obj, mask_obj, has_mask, struct_data);
             }
-            generate_structconn(struct_data, data.struct_conns);
+            generate_structconn(struct_data, data.struct_conns, data.struct_conn_map);
         }
 
         namespace
@@ -1543,10 +1652,10 @@ namespace msgpack {
                 // because it converts int32 to double
             }
         }
-        std::vector<int32_t> decode_integer_column(const msgpack::object & column) {
+        void decode_column(const msgpack::object & column, std::vector<int32_t>& result) {
             // Column data structure: { data: <encoded>, encoding: [ {kind, ...}, ... ] }
             if (column.type != msgpack::type::MAP) {
-                return {};
+                return ;
             }
 
             msgpack::object data_obj;
@@ -1557,15 +1666,14 @@ namespace msgpack {
             get_data_and_encoding(column.via.map, data_obj, found_data, encoding_obj, found_encoding);
 
             if (!found_data || !found_encoding) {
-                return {};
+                return ;
             }
 
             if (encoding_obj.type != msgpack::type::ARRAY) {
-                return {};
+                return ;
             }
 
             // Decode through the encoding chain (applied in reverse order)
-            std::vector<int32_t> result;
             std::vector<uint8_t> byte_data;
             auto encodings = encoding_obj.via.array;
 
@@ -1589,7 +1697,7 @@ namespace msgpack {
                     decode_integer_column_next_steps(enc_map, encodings, data_obj, kind, result, byte_data);
                 }
             }
-            return result;
+            return ;
         }
 
         namespace
@@ -1670,11 +1778,10 @@ namespace msgpack {
                 }
             }
         }
-        std::vector<double> decode_float_column(const msgpack::object & column) {
+        void decode_column(const msgpack::object & column, std::vector<double>& result) {
             if (column.type != msgpack::type::MAP) {
-                return {};
+                return ;
             }
-            std::vector<double> result;
 
             msgpack::object data_obj;
             msgpack::object encoding_obj;
@@ -1684,7 +1791,7 @@ namespace msgpack {
             get_data_and_encoding(column.via.map, data_obj, found_data, encoding_obj, found_encoding);
 
             if (!found_data || !found_encoding || encoding_obj.type != msgpack::type::ARRAY) {
-                return {};
+                return ;
             }
 
             msgpack::object_array encodings = encoding_obj.via.array;
@@ -1692,11 +1799,11 @@ namespace msgpack {
             // Check if ByteArray has Float32/Float64 type (direct float encoding)
             if (encodings.size > 0 && encodings.ptr[encodings.size - 1].type == msgpack::type::MAP) {
                 decode_float_column_raw_float(data_obj, encodings, result);
-                return result;
+                return ;
             }
 
             // Otherwise, decode as integers first, then check for FixedPoint
-            auto int_values = decode_integer_column(column);
+            std::vector<int32_t> int_values; decode_column(column, int_values);
 
             // Look for FixedPoint encoding
             double factor = 1.0;
@@ -1732,7 +1839,8 @@ namespace msgpack {
 
             if (found_fixed_point) {
                 // srcType is informational; we always decode to double
-                return decode_fixed_point(int_values, factor);
+                result = decode_fixed_point(int_values, factor);
+                return;
             }
             else {
                 // No FixedPoint, convert integers to doubles
@@ -1740,14 +1848,14 @@ namespace msgpack {
                 for (size_t i = 0; i < int_values.size(); ++i) {
                     result[i] = static_cast<double>(int_values[i]);
                 }
-                return result;
+                return ;
             }
         }
 
-        std::vector<std::string> decode_string_column(const msgpack::object & column) {
+        void decode_column(const msgpack::object & column, std::vector<std::string>& result) {
             // Simple string array decoding. Might need some refinement in the future.
             if (column.type != msgpack::type::MAP) {
-                return {};
+                return ;
             }
 
             msgpack::object data_obj;
@@ -1758,11 +1866,11 @@ namespace msgpack {
             get_data_and_encoding(column.via.map, data_obj, found_data, encoding_obj, found_encoding);
 
             if (!found_data || !found_encoding) {
-                return {};
+                return ;
             }
 
             if (encoding_obj.type != msgpack::type::ARRAY) {
-                return {};
+                return ;
             }
 
             // Look for StringArray encoding
@@ -1784,11 +1892,12 @@ namespace msgpack {
                 }
 
                 if (kind == "StringArray") {
-                    return decode_string_array(encodings.ptr[i], data_obj);
+                    result = decode_string_array(encodings.ptr[i], data_obj);
+                    return;
                 }
             }
 
-            return {};
+            return ;
         }
 
         std::vector<int32_t> decode_byte_array(const msgpack::object & data) {
@@ -1984,7 +2093,9 @@ namespace msgpack {
         std::vector<int32_t> decode_mask(const msgpack::object & mask_obj) {
             // Mask is encoded just like a regular integer column
             // Mask values: 0=present, 1="." (not present), 2="?" (unknown)
-            return decode_integer_column(mask_obj);
+            std::vector<int32_t> result;
+            decode_column(mask_obj, result);
+            return result;
         }
 
         namespace
@@ -2199,15 +2310,15 @@ namespace msgpack {
                 decode_string_array_with_offset(offsets_obj, offset_encoding_obj, data, offsets);
             }
 
-
             if (offsets.empty() || indices.empty()) {
                 return {};
             }
 
-            // Map indices to strings using offsets
             std::vector<std::string> result;
             result.reserve(indices.size());
+            {
 
+            // Map indices to strings using offsets
             for (size_t i = 0; i < indices.size(); ++i) {
                 int32_t idx = indices[i];
                 if (idx < 0 || idx >= static_cast<int32_t>(offsets.size()) - 1) {
@@ -2225,8 +2336,112 @@ namespace msgpack {
                     result.push_back("");
                 }
             }
+            }
 
             return result;
+        }
+        void decode_column(const msgpack::object& column, StringCollection& result) {
+            // Simple string array decoding. Might need some refinement in the future.
+            if (column.type != msgpack::type::MAP) {
+                return;
+            }
+
+            msgpack::object data_obj;
+            msgpack::object encoding_obj;
+            bool found_data = false;
+            bool found_encoding = false;
+
+            get_data_and_encoding(column.via.map, data_obj, found_data, encoding_obj, found_encoding);
+
+            if (!found_data || !found_encoding) {
+                return;
+            }
+
+            if (encoding_obj.type != msgpack::type::ARRAY) {
+                return;
+            }
+
+            // Look for StringArray encoding
+            auto encodings = encoding_obj.via.array;
+            for (uint32_t i = 0; i < encodings.size; ++i) {
+                if (encodings.ptr[i].type != msgpack::type::MAP) {
+                    continue;
+                }
+
+                std::string kind;
+                {
+                    auto enc_map = encodings.ptr[i].via.map;
+                    for (uint32_t j = 0; j < enc_map.size; ++j) {
+                        std::string key;
+                        enc_map.ptr[j].key.convert(key);
+                        if (key == "kind") {
+                            enc_map.ptr[j].val.convert(kind);
+                            break;
+                        }
+                    }
+                }
+
+                if (kind == "StringArray") {
+                    auto encoding = encodings.ptr[i];
+                    // StringArray decoder: decodes string arrays
+                    if (encoding.type != msgpack::type::MAP) {
+                        return;
+                    }
+
+                    // Get dataEncoding, stringData, offsetEncoding, and offsets from encoding spec
+                    msgpack::object data_encoding_obj;
+                    msgpack::object string_data_obj;
+                    msgpack::object offset_encoding_obj;
+                    msgpack::object offsets_obj;
+
+                    auto enc_map = encoding.via.map;
+                    for (uint32_t i = 0; i < enc_map.size; ++i) {
+                        std::string key;
+                        enc_map.ptr[i].key.convert(key);
+                        if (key == "dataEncoding") {
+                            data_encoding_obj = enc_map.ptr[i].val;
+                        }
+                        else if (key == "stringData") {
+                            string_data_obj = enc_map.ptr[i].val;
+                        }
+                        else if (key == "offsetEncoding") {
+                            offset_encoding_obj = enc_map.ptr[i].val;
+                        }
+                        else if (key == "offsets") {
+                            offsets_obj = enc_map.ptr[i].val;
+                        }
+                    }
+
+                    // Decode string data
+                    std::string string_data;
+                    if (string_data_obj.type == msgpack::type::STR) {
+                        string_data_obj.convert(string_data);
+                    }
+                    else {
+                        return;
+                    }
+
+
+                    // Decode the indices from the data using dataEncoding chain
+                    std::vector<int32_t> indices;
+                    if (data_encoding_obj.type == msgpack::type::ARRAY) {
+
+                        //decode_column(data_obj, indices);
+                        decode_string_array_with_indices(data_encoding_obj, data_obj, indices);
+                    }
+
+                    // Decode the offsets using offsetEncoding chain
+                    std::vector<int32_t> offsets;
+                    if (offset_encoding_obj.type == msgpack::type::ARRAY) {
+                        decode_string_array_with_offset(offsets_obj, offset_encoding_obj, data_obj, offsets);
+                    }
+                    result = StringCollection(std::move(indices), std::move(offsets), std::move(string_data));
+                    return;
+                }
+            }
+
+            return;
+
         }
 
         // =============================================================================
@@ -2574,7 +2789,6 @@ namespace msgpack {
             fill(frame, atom_site_data);
             pack(pk, atom_site_data);
         }
-
         void encode_cell_category(msgpack::packer<msgpack::sbuffer>& pk, const Frame& frame) {
             const auto& cell = frame.cell();
             auto lengths = cell.lengths();
@@ -2820,11 +3034,6 @@ namespace msgpack {
             encode_integer_column(pk, "beg_label_seq_id", beg_label_seq_ids);
             encode_string_column(pk, "end_label_asym_id", end_label_asym_ids);
             encode_integer_column(pk, "end_label_seq_id", end_label_seq_ids);
-        }
-
-        namespace
-        {
-
         }
         void encode_chem_comp_bond_category(msgpack::packer<msgpack::sbuffer>& pk, const Frame& frame) {
             const auto& bonds = frame.topology().bonds();
@@ -3181,8 +3390,8 @@ namespace msgpack {
             pk.pack("data");
             // Encode as Float64 ByteArray
             auto binary_data = encode_byte_array_float64(data);
-            pk.pack_bin(binary_data.size());
-            pk.pack_bin_body(reinterpret_cast<const char*>(binary_data.data()), binary_data.size());
+            pk.pack_bin(static_cast<uint32_t>(binary_data.size()));
+            pk.pack_bin_body(reinterpret_cast<const char*>(binary_data.data()), static_cast<uint32_t>(binary_data.size()));
 
             pk.pack("encoding");
             pk.pack_array(1);  // Single encoding: ByteArray
@@ -3209,8 +3418,8 @@ namespace msgpack {
 
                 // offsets
                 pk.pack("offsets");
-                pk.pack_bin(offsets_binary.size());
-                pk.pack_bin_body(reinterpret_cast<const char*>(offsets_binary.data()), offsets_binary.size());
+                pk.pack_bin(static_cast<uint32_t>(offsets_binary.size()));
+                pk.pack_bin_body(reinterpret_cast<const char*>(offsets_binary.data()), static_cast<uint32_t>(offsets_binary.size()));
             }
             inline void build_encode_string_data(const std::vector<std::string>& data, std::string& string_data)
             {
@@ -3260,8 +3469,8 @@ namespace msgpack {
             auto packed_data = encode_integer_packing(rl_encoded, byte_count, is_unsigned);
 
             pk.pack("data");
-            pk.pack_bin(packed_data.size());
-            pk.pack_bin_body(reinterpret_cast<const char*>(packed_data.data()), packed_data.size());
+            pk.pack_bin(static_cast<uint32_t>(packed_data.size()));
+            pk.pack_bin_body(reinterpret_cast<const char*>(packed_data.data()), static_cast<uint32_t>(packed_data.size()));
 
             // Encoding specification
             pk.pack("encoding");
@@ -3334,8 +3543,8 @@ namespace msgpack {
             auto packed_data = encode_integer_packing(rl_encoded, byte_count, is_unsigned);
 
             pk.pack("data");
-            pk.pack_bin(packed_data.size());
-            pk.pack_bin_body(reinterpret_cast<const char*>(packed_data.data()), packed_data.size());
+            pk.pack_bin(static_cast<uint32_t>(packed_data.size()));
+            pk.pack_bin_body(reinterpret_cast<const char*>(packed_data.data()), static_cast<uint32_t>(packed_data.size()));
 
             // Encoding specification
             pk.pack("encoding");
@@ -3399,7 +3608,6 @@ namespace chemfiles
             throw file_error("append mode ('a') is not supported for the BCIF format");
         }
     }
-
     BCIFFormat::BCIFFormat(std::shared_ptr<MemoryBuffer> memory, File::Mode mode, File::Compression compression) 
         : data_(new BCIFData()) 
     {
@@ -3412,7 +3620,6 @@ namespace chemfiles
         decode(data);
         memory_ = memory;
     }
-
 
     size_t BCIFFormat::size() {
         return data_->num_models;
@@ -3429,6 +3636,29 @@ namespace chemfiles
 
     namespace
     {
+        struct DataProfile
+        {
+            DataProfile(const BCIFFormat::BCIFData& data)
+                :
+                atom_type_size_ok(data.atom_z.size() == data.atom_type_symbol.size()),
+                atom_authLabel_size_ok(data.atom_z.size() == data.auth_atom_label.size()),
+                atom_label_size_ok(data.atom_z.size() == data.atom_label.size()),
+                atom_id_size_ok(data.atom_z.size() == data.atom_id.size()),
+                residue_data_size_ok(data.atom_z.size() == data.residue_name.size()  &&
+                   data.atom_z.size() == data.residue_id.size()                      &&
+                   data.atom_z.size() == data.chain_id.size()                        &&
+                   data.atom_z.size() == data.insertion_code.size()                  &&
+                   data.atom_z.size() == data.auth_residue_id.size()                 &&
+                   data.atom_z.size() == data.auth_chain_id.size())
+            { }
+
+            bool atom_type_size_ok =         false;
+            bool atom_authLabel_size_ok =    false;
+            bool atom_label_size_ok =        false;
+            bool atom_id_size_ok =           false;
+            bool residue_data_size_ok =      false;
+        };
+
         inline void create_atoms(const BCIFFormat::BCIFData& data_, Frame& frame)
         {
             // Set up the frame
@@ -3468,436 +3698,273 @@ namespace chemfiles
             }
 
         }
-        inline void create_residues(const BCIFFormat::BCIFData& data_, Frame& frame)
+
+        inline void assign_secondary_structure(const BCIFFormat::BCIFData& data_, const std::string& chain_id, const int64_t& residue_id, chemfiles::Residue& residue)
         {
-            const size_t& natoms = data_.atom_x.size();
-
-            // Create residues if residue data is available
-            if (!data_.residue_name.empty() && !data_.chain_id.empty()) {
-                // Use (chain_id, residue_id, residue_name) as the unique key
-                // Includes residue name to handle microheterogeneity (same position, different residue types)
-                using ChainName = std::string;
-                using Resid = int64_t;
-                using Resname = std::string;
-                using ResidueKey = std::tuple<ChainName, Resid, Resname>;
-                std::map<ResidueKey, size_t> residue_map; // maps key to residue index
-                std::vector<Residue> residues;
-                std::vector<std::vector<size_t>> residue_atoms;
-
-
-                for (size_t i = 0; i < natoms && i < data_.chain_id.size() && i < data_.residue_id.size() && i < data_.residue_name.size(); ++i) {
-                    ChainName chain_id = data_.chain_id[i];
-                    Resid residue_id = data_.residue_id[i];
-                    Resname residue_name = data_.residue_name[i];
-                    std::string ins_code = (i < data_.insertion_code.size()) ? data_.insertion_code[i] : "";
-
-                    // Normalize insertion code: treat empty string, "?", and "." as the same (no insertion)
-                    if (ins_code == "?" || ins_code == ".") {
-                        ins_code = "";
-                    }
-
-                    ResidueKey key = std::make_tuple(chain_id, residue_id, residue_name);
-
-                    // Check if this residue already exists
-                    auto it = residue_map.find(key);
-                    if (it == residue_map.end()) {
-                        // Create new residue
-                        Residue residue(residue_name, residue_id);
-                        residue.set("chainid", chain_id);
-                        if (!ins_code.empty() && ins_code != "?") {
-                            residue.set("insertion_code", ins_code);
-                        }
-
-                        // Store auth values as properties for round-trip writing
-                        if (i < data_.auth_chain_id.size() && !data_.auth_chain_id[i].empty()) {
-                            residue.set("chainname", data_.auth_chain_id[i]);
-                        }
-                        if (i < data_.auth_residue_id.size()) {
-                            residue.set("auth_seq_id", data_.auth_residue_id[i]);
-                        }
-
-                        // Apply secondary structure if this residue is in a secondary structure range
-                        // Check if this residue is the start of a secondary structure
-                        BCIFFormat::BCIFData::SecondaryStructureKey ss_key = std::make_pair(chain_id, residue_id);
-                        auto ss_it = data_.secondary_structures.find(ss_key);
-                        if (ss_it != data_.secondary_structures.end()) {
-                            // This is the start of a secondary structure range
-                            const auto& [end_chain, end_resid, ss_type] = ss_it->second;
-                            residue.set("secondary_structure", ss_type);
-                        }
-                        else {
-                            // Check if this residue is within any secondary structure range
-                            for (const auto& [ss_start_key, ss_range] : data_.secondary_structures) {
-                                const auto& [start_chain, start_resid] = ss_start_key;
-                                const auto& [end_chain, end_resid, ss_type] = ss_range;
-
-                                // Check if this residue is in the range (same chain, between start and end)
-                                if (chain_id == start_chain && chain_id == end_chain &&
-                                    residue_id >= start_resid && residue_id <= end_resid) {
-                                    residue.set("secondary_structure", ss_type);
-                                    break;
-                                }
-                            }
-                        }
-
-                        size_t residue_idx = residues.size();
-                        residues.push_back(residue);
-                        residue_atoms.push_back(std::vector<size_t>());
-                        residue_map[key] = residue_idx;
-
-                        // Add atom to this new residue
-                        residue_atoms[residue_idx].push_back(i);
-                    }
-                    else {
-                        // Add atom to existing residue
-                        size_t residue_idx = it->second;
-                        residue_atoms[residue_idx].push_back(i);
-                    }
-                }
-
-                // Add residues to topology with their atoms
-                for (size_t r = 0; r < residues.size(); ++r) {
-                    for (size_t atom_idx : residue_atoms[r]) {
-                        residues[r].add_atom(atom_idx);
-                    }
-                    frame.add_residue(residues[r]);
-                }
-            }
-
-        }
-        inline void create_bonds_intraResidues(const BCIFFormat::BCIFData& data_, Frame& frame)
-        {
-            // Add bonds from _chem_comp_bond
-            // These are template-level bond definitions: for each residue type (comp_id),
-            // bonds are defined between atoms with specific label_atom_id values.
-            // For example: "ALA CA-CB" means every ALA residue has a bond between its CA and CB atoms.
-
-            size_t bonds_applied = 0;
-
-            // Process each bond template
-            for (const auto& chem_bond : data_.chem_comp_bonds) {
-                const std::string& comp_id = chem_bond.comp_id;
-                const std::string& atom_name_1 = chem_bond.atom_id_1;
-                const std::string& atom_name_2 = chem_bond.atom_id_2;
-
-                // Skip bonds with empty atom names
-                if (atom_name_1.empty() || atom_name_2.empty()) {
-                    continue;
-                }
-
-                // Parse bond order
-                Bond::BondOrder bond_order = parse_bond_order(chem_bond.value_order);
-
-                // Apply this bond template to ALL residues of this type
-                for (const auto& residue : frame.topology().residues()) {
-                    if (residue.name() != comp_id) {
-                        continue;
-                    }
-
-                    // Find the atom with label_atom_id matching atom_name_1
-                    // Find the atom with label_atom_id matching atom_name_2
-                    size_t atom1_idx = static_cast<size_t>(-1);
-                    size_t atom2_idx = static_cast<size_t>(-1);
-
-                    for (size_t atom_idx : residue) {
-                        const auto& atom = frame[atom_idx];
-                        const std::string& atom_label = atom.name();
-
-                        if (atom_label == atom_name_1 && atom1_idx == static_cast<size_t>(-1)) {
-                            atom1_idx = atom_idx;
-                        }
-                        if (atom_label == atom_name_2 && atom2_idx == static_cast<size_t>(-1)) {
-                            atom2_idx = atom_idx;
-                        }
-
-                        // Break early if we found both atoms
-                        if (atom1_idx != static_cast<size_t>(-1) &&
-                            atom2_idx != static_cast<size_t>(-1)) {
-                            break;
-                        }
-                    }
-
-                    // Add the bond if we found both atoms and they're different
-                    if (atom1_idx != static_cast<size_t>(-1) &&
-                        atom2_idx != static_cast<size_t>(-1) &&
-                        atom1_idx != atom2_idx &&  // Don't bond atom to itself
-                        atom1_idx < frame.size() &&
-                        atom2_idx < frame.size()) {
-                        frame.add_bond(atom1_idx, atom2_idx, bond_order);
-                        bonds_applied++;
-                    }
-                }
-            }
-
-        }
-
-        inline void create_bonds_from_struct_conn(const BCIFFormat::BCIFData& data_, Frame& frame)
-        {
-            // Add bonds from _struct_conn
-            // These are instance-specific bonds: inter-residue bonds, metal coordination, disulfides, etc.
-            for (const auto& conn : data_.struct_conns) {
-                // Find atom 1 by matching chain/residue/atom identifiers
-                size_t atom1_idx = static_cast<size_t>(-1);
-                size_t atom2_idx = static_cast<size_t>(-1);
-
-                // Search for both atoms in residues
-                for (const auto& residue : frame.topology().residues()) {
-                    // Check if this residue might contain atom 1 or atom 2
-                    auto chain_prop = residue.get("chainid");
-                    std::string res_chain = chain_prop ? chain_prop->as_string() : "";
-                    auto res_id_opt = residue.id();
-                    if (!res_id_opt) {
-                        continue;
-                    }
-                    int32_t res_id = static_cast<int32_t>(*res_id_opt);
-
-                    // When label_seq_id is negative (typically -1), ignore sequence ID matching
-                    // and match only by chain and residue name
-                    bool is_atom1_residue = (res_chain == conn.ptnr1.label_asym_id &&
-                                             residue.name() == conn.ptnr1.label_comp_id &&
-                                             (conn.ptnr1.label_seq_id < 0 || res_id == conn.ptnr1.label_seq_id));
-                    bool is_atom2_residue = (res_chain == conn.ptnr2.label_asym_id &&
-                                             residue.name() == conn.ptnr2.label_comp_id &&
-                                             (conn.ptnr2.label_seq_id < 0 || res_id == conn.ptnr2.label_seq_id));
-
-                    if (is_atom1_residue || is_atom2_residue) {
-                        for (size_t atom_idx : residue) {
-                            if (atom_idx < frame.size()) {
-                                const std::string& atom_name = frame[atom_idx].name();
-
-                                if (is_atom1_residue && atom_name == conn.ptnr1.label_atom_id &&
-                                    atom1_idx == static_cast<size_t>(-1)) {
-                                    atom1_idx = atom_idx;
-                                }
-                                if (is_atom2_residue && atom_name == conn.ptnr2.label_atom_id &&
-                                    atom2_idx == static_cast<size_t>(-1)) {
-                                    atom2_idx = atom_idx;
-                                }
-                            }
-                        }
-                    }
-
-                    // Break early if we found both atoms
-                    if (atom1_idx != static_cast<size_t>(-1) && atom2_idx != static_cast<size_t>(-1)) {
-                        break;
-                    }
-                }
-
-                // If we haven't found the atoms in residues, search all atoms
-                // (handles atoms not belonging to any residue, like solvents or ions)
-                if (atom1_idx == static_cast<size_t>(-1) || atom2_idx == static_cast<size_t>(-1)) {
-                    for (size_t atom_idx = 0; atom_idx < frame.size(); ++atom_idx) {
-                        const std::string& atom_name = frame[atom_idx].name();
-
-                        // Try to match atom 1
-                        if (atom1_idx == static_cast<size_t>(-1) && atom_name == conn.ptnr1.label_atom_id) {
-                            auto residue_opt = frame.topology().residue_for_atom(atom_idx);
-                            bool matches_residue = !residue_opt;  // Matches if no residue
-                            if (residue_opt) {
-                                const auto& residue = residue_opt.value();
-                                auto chain_prop = residue.get("chainid");
-                                std::string res_chain = chain_prop ? chain_prop->as_string() : "";
-                                auto res_id_opt = residue.id();
-                                int32_t res_id = res_id_opt ? static_cast<int32_t>(*res_id_opt) : -1;
-                                matches_residue = (res_chain == conn.ptnr1.label_asym_id &&
-                                                 res_id == conn.ptnr1.label_seq_id &&
-                                                 residue.name() == conn.ptnr1.label_comp_id);
-                            }
-                            if (matches_residue) {
-                                atom1_idx = atom_idx;
-                            }
-                        }
-
-                        // Try to match atom 2
-                        if (atom2_idx == static_cast<size_t>(-1) && atom_name == conn.ptnr2.label_atom_id) {
-                            auto residue_opt = frame.topology().residue_for_atom(atom_idx);
-                            bool matches_residue = !residue_opt;  // Matches if no residue
-                            if (residue_opt) {
-                                const auto& residue = residue_opt.value();
-                                auto chain_prop = residue.get("chainid");
-                                std::string res_chain = chain_prop ? chain_prop->as_string() : "";
-                                auto res_id_opt = residue.id();
-                                int32_t res_id = res_id_opt ? static_cast<int32_t>(*res_id_opt) : -1;
-                                matches_residue = (res_chain == conn.ptnr2.label_asym_id &&
-                                                 res_id == conn.ptnr2.label_seq_id &&
-                                                 residue.name() == conn.ptnr2.label_comp_id);
-                            }
-                            if (matches_residue) {
-                                atom2_idx = atom_idx;
-                            }
-                        }
-
-                        if (atom1_idx != static_cast<size_t>(-1) && atom2_idx != static_cast<size_t>(-1)) {
-                            break;
-                        }
-                    }
-                }
-
-                // Add the bond if we found both atoms
-                if (atom1_idx != static_cast<size_t>(-1) &&
-                    atom2_idx != static_cast<size_t>(-1) &&
-                    atom1_idx != atom2_idx) {
-
-                    Bond::BondOrder bond_order = parse_bond_order(conn.pdbx_value_order);
-                    frame.add_bond(atom1_idx, atom2_idx, bond_order);
-                } 
+            BCIFFormat::BCIFData::ChainNameResId ss_mapKey{ chain_id, static_cast<uint32_t>(residue_id) };
+            if (data_.secondary_structure_map.count(ss_mapKey) > 0)
+            {
+                residue.set("secondary_structure", data_.secondary_structure_map.at(ss_mapKey));
             }
         }
-
+        using AtomIndex = size_t;
         // Helper function to check if a residue is a nucleotide (RNA or DNA)
         inline bool is_nucleotide(const std::string& residue_name) {
-            // Common RNA nucleotides
-            if (residue_name == "A" || residue_name == "C" || residue_name == "G" || residue_name == "U" ||
-                residue_name == "DA" || residue_name == "DC" || residue_name == "DG" || residue_name == "DT") {
-                return true;
-            }
-            // Modified nucleotides often have single letter codes or variants
-            // We can expand this list if needed
-            return false;
+             return (residue_name == "A" || residue_name == "C" || residue_name == "G" || residue_name == "U" ||
+                    residue_name == "DA" || residue_name == "DC" || residue_name == "DG" || residue_name == "DT");
+        }
+        inline bool is_aminoacide(const std::string& residue_name) {
+            return
+                residue_name == "ALA" ||
+                residue_name == "ARG" ||
+                residue_name == "ASN" ||
+                residue_name == "ASP" ||
+                residue_name == "CYS" ||
+                residue_name == "GLN" ||
+                residue_name == "GLU" ||
+                residue_name == "GLY" ||
+                residue_name == "HIS" ||
+                residue_name == "ILE" ||
+                residue_name == "LEU" ||
+                residue_name == "LYS" ||
+                residue_name == "MET" ||
+                residue_name == "PHE" ||
+                residue_name == "PRO" ||
+                residue_name == "SER" ||
+                residue_name == "THR" ||
+                residue_name == "TRP" ||
+                residue_name == "TYR" ||
+                residue_name == "VAL"
+                ;
         }
 
-        inline void create_bonds_interResidues_chain(const BCIFFormat::BCIFData& data_, std::vector<size_t>& chain_residues, Frame& frame)
+        inline void create_intra_residue_bonds(const BCIFFormat::BCIFData::ChemCompMap& chemcomp_map, const std::string& resname, const std::map<BCIFFormat::BCIFData::AtomName, AtomIndex>& atoms, Frame& frame)
         {
-            auto& residues = frame.topology().residues();
+            std::unordered_set<std::pair<AtomIndex, AtomIndex>> bounded_atoms; // Avoid bounding the same pair twice
 
-            // Create inter-residue bonds between consecutive residues
-            for (size_t i = 0; i + 1 < chain_residues.size(); ++i) {
-                const auto& residue_n = residues[chain_residues[i]];
-                const auto& residue_n1 = residues[chain_residues[i + 1]];
+            for (auto& [it_atomName, it_atomIndex] : atoms)
+            {
+                std::pair< BCIFFormat::BCIFData::ResName, BCIFFormat::BCIFData::AtomName> key{resname, it_atomName };
+                auto [begin, end] = chemcomp_map.equal_range(key);
+                for (auto it2_bonds = begin; it2_bonds != end; ++it2_bonds)
+                {
+                    auto& [it2_resname, it2_AtomName1] = it2_bonds->first;
+                    auto& [it2_atomName2, it2_bondOrder] = it2_bonds->second;
+                    if (atoms.count(it2_atomName2) == 0)
+                        continue;
 
-                // Check if residues have consecutive IDs
-                auto id_n = residue_n.id();
-                auto id_n1 = residue_n1.id();
-                bool are_residue_consecutive_in_id = id_n && id_n1 && (*id_n1 == *id_n + 1);
+                    std::pair<AtomIndex, AtomIndex> p12(it_atomIndex, atoms.at(it2_atomName2));
+                    std::pair<AtomIndex, AtomIndex> p21(atoms.at(it2_atomName2), it_atomIndex);
 
-                if (are_residue_consecutive_in_id) {
-                    // Check if this is a nucleotide chain (RNA/DNA)
-                    bool is_nucleotide_chain = is_nucleotide(residue_n.name()) && is_nucleotide(residue_n1.name());
+                    if (bounded_atoms.count(p12) > 0 && bounded_atoms.count(p21))
+                        continue;
 
-                    if (is_nucleotide_chain) {
-                        // Phosphate bond: O3' atom of residue N connects to P atom of residue N+1
-                        // Note: O3' is the 3' oxygen in the ribose/deoxyribose sugar
+                    Bond::BondOrder bond_order = parse_bond_order(it2_bondOrder);
+                    frame.add_bond(it_atomIndex, atoms.at(it2_atomName2), bond_order);
+                    bounded_atoms.insert(std::move(p12));
+                    bounded_atoms.insert(std::move(p21));
+                }
+            }
 
-                        // Find O3' atom in residue N
-                        size_t o3p_atom_idx = static_cast<size_t>(-1);
-                        for (size_t atom_idx : residue_n) {
-                            if (atom_idx < frame.size() && frame[atom_idx].name() == "O3'") {
-                                o3p_atom_idx = atom_idx;
-                                break;
-                            }
-                        }
+        }
+        inline bool is_residue_forward_binder(const std::string& atomName)
+        {
+            return atomName == "C" || atomName == "O3'";
+        }
+        inline bool is_residue_backward_binder(const std::string& atomName)
+        {
+            return atomName == "N" || atomName == "P";
+        }
+        inline size_t get_inter_residue_binder(const std::map<BCIFFormat::BCIFData::AtomName, AtomIndex>& atoms)
+        {
+            for (auto& [it_atomName, it_atomIndex] : atoms)
+            {
+                if (is_residue_forward_binder(it_atomName))
+                    return it_atomIndex;
+            }
+            return 0xffffffffffffffff;
+        }
+        inline bool expect_implicit_inter_residue_bonding(const std::string& res_name)
+        {
+            return (is_nucleotide(res_name) || is_aminoacide(res_name));
+        }
+        // Check if residue data matches the placeholder pattern used for atoms without residues
+        inline bool is_placeholder_residue_data(const std::string& res_name, int32_t res_id, const std::string& chain_id) {
+            return res_name == "UNK" && res_id == 1 && chain_id == "A";
+        }
 
-                        // Find P atom in residue N+1
-                        size_t p_atom_idx = static_cast<size_t>(-1);
-                        for (size_t atom_idx : residue_n1) {
-                            if (atom_idx < frame.size() && frame[atom_idx].name() == "P") {
-                                p_atom_idx = atom_idx;
-                                break;
-                            }
-                        }
+        inline void create_residue(
+            const BCIFFormat::BCIFData& data,
+            Frame& frame,
+            const std::string& res_name,
+            const int32_t& res_id,
+            const std::map<BCIFFormat::BCIFData::AtomName, AtomIndex>& atoms_waiting_for_residue_data,
+            const size_t& it_atomIndex,
+            size_t& previous_inter_residue_forward_linking_atom,
+            size_t& current_inter_residue_forward_linking_atom
+        )
+        {
+            const size_t last_index = it_atomIndex - 1;
 
-                        // Create phosphate bond if both atoms found
-                        if (o3p_atom_idx != static_cast<size_t>(-1) &&
-                            p_atom_idx != static_cast<size_t>(-1)) {
-                            // Check if bond doesn't already exist
-                            bool bond_exists = false;
-                            for (const auto& existing_bond : frame.topology().bonds()) {
-                                if ((existing_bond[0] == o3p_atom_idx && existing_bond[1] == p_atom_idx) ||
-                                    (existing_bond[0] == p_atom_idx && existing_bond[1] == o3p_atom_idx)) {
-                                    bond_exists = true;
-                                    break;
-                                }
-                            }
+            // Skip creating residues for atoms with placeholder residue data
+            // These are atoms that didn't belong to any residue in the original file
+            if (is_placeholder_residue_data(res_name, res_id, data.chain_id[last_index])) {
+                previous_inter_residue_forward_linking_atom = current_inter_residue_forward_linking_atom;
+                current_inter_residue_forward_linking_atom = 0xffffffffffffffff;
+                return;
+            }
 
-                            if (!bond_exists) {
-                                frame.add_bond(o3p_atom_idx, p_atom_idx, Bond::SINGLE);
-                            }
-                        }
-                    } else {
-                        // Peptide bond: C atom of residue N connects to N atom of residue N+1
+            create_intra_residue_bonds(data.chem_comp_bonds_map, res_name, atoms_waiting_for_residue_data, frame);
+            Residue residue(res_name, res_id);
+            residue.set("chainid", data.chain_id[last_index]);
+            residue.set("insertion_code", data.insertion_code[last_index]);
+            residue.set("chainname", data.auth_chain_id[last_index]);
+            residue.set("auth_seq_id", static_cast<double>(data.auth_residue_id[last_index]));
+            for (auto& [_, it_atomIdx] : atoms_waiting_for_residue_data)
+            {
+                residue.add_atom(it_atomIdx);
+            }
+            assign_secondary_structure(data, data.chain_id[last_index], data.residue_id[last_index], residue);
+            frame.add_residue(std::move(residue));
 
-                        // Find C atom in residue N
-                        size_t c_atom_idx = static_cast<size_t>(-1);
-                        for (size_t atom_idx : residue_n) {
-                            if (atom_idx < frame.size() && frame[atom_idx].name() == "C") {
-                                c_atom_idx = atom_idx;
-                                break;
-                            }
-                        }
+            previous_inter_residue_forward_linking_atom = current_inter_residue_forward_linking_atom;
+            current_inter_residue_forward_linking_atom = 0xffffffffffffffff;
 
-                        // Find N atom in residue N+1
-                        size_t n_atom_idx = static_cast<size_t>(-1);
-                        for (size_t atom_idx : residue_n1) {
-                            if (atom_idx < frame.size() && frame[atom_idx].name() == "N") {
-                                n_atom_idx = atom_idx;
-                                break;
-                            }
-                        }
+        }
+        inline void fill_atomistic_data(const BCIFFormat::BCIFData& data, const DataProfile& profile, Frame& frame)
+        {
+            const size_t& natoms = data.atom_x.size();
+            frame.resize(natoms);
+            // TODO : make room in the bond collection for 3*natoms
+            auto positions = frame.positions();
 
-                        // Create peptide bond if both atoms found
-                        if (c_atom_idx != static_cast<size_t>(-1) &&
-                            n_atom_idx != static_cast<size_t>(-1)) {
-                            // Check if bond doesn't already exist
-                            bool bond_exists = false;
-                            for (const auto& existing_bond : frame.topology().bonds()) {
-                                if ((existing_bond[0] == c_atom_idx && existing_bond[1] == n_atom_idx) ||
-                                    (existing_bond[0] == n_atom_idx && existing_bond[1] == c_atom_idx)) {
-                                    bond_exists = true;
-                                    break;
-                                }
-                            }
+            std::map<BCIFFormat::BCIFData::StructConnMapKey, AtomIndex> atoms_waiting_for_struct_conn_bounding;
+            std::map<BCIFFormat::BCIFData::AtomName, AtomIndex> atoms_waiting_for_residue_data;
+            size_t previous_inter_residue_forward_linking_atom = 0xffffffffffffffff;
+            size_t current_inter_residue_forward_linking_atom = 0xffffffffffffffff;
+            bool just_changed_chain = false;
+            bool just_changed_residue = false;
 
-                            if (!bond_exists) {
-                                frame.add_bond(c_atom_idx, n_atom_idx, Bond::SINGLE);
-                            }
-                        }
+            std::unique_ptr<std::string> chain_name = nullptr;
+            std::unique_ptr<std::string> res_name = nullptr;
+            const int32_t*         res_id = nullptr;
+
+            size_t it_atomIndex = 0; // We need the variable to survive after the loop to create the last residue
+            for (; it_atomIndex < natoms; ++it_atomIndex) {
+
+                just_changed_chain = it_atomIndex > 0 
+                    && profile.residue_data_size_ok 
+                    && data.chain_id[it_atomIndex - 1] != data.chain_id[it_atomIndex];
+                just_changed_residue = it_atomIndex > 0
+                    && (
+                        just_changed_chain || (
+                            profile.residue_data_size_ok 
+                            && (
+                                data.residue_id[it_atomIndex - 1] != data.residue_id[it_atomIndex]
+                                || data.residue_name[it_atomIndex - 1] != data.residue_name[it_atomIndex]
+                                )
+                            )
+                    );
+
+                // When I wrote the implementation, the version of chemfiles didn't allow to modify a residue once it was added to the frame.
+                // To work around it, we create the residue N - 1 once we iterate on the first atom of residue N. 
+                if (just_changed_residue)
+                {
+                    create_residue(data, frame, *res_name, *res_id, atoms_waiting_for_residue_data, it_atomIndex, previous_inter_residue_forward_linking_atom, current_inter_residue_forward_linking_atom);
+                    atoms_waiting_for_residue_data.clear();
+                    just_changed_residue = false;
+                }
+
+                chain_name = nullptr;
+                res_name = nullptr;
+                res_id = nullptr;
+
+                if (just_changed_chain)
+                {
+                    // we don't bound residues from different chains
+                    previous_inter_residue_forward_linking_atom = 0xffffffffffffffff;
+                    just_changed_chain = false;
+                }
+
+                if (profile.residue_data_size_ok)
+                {
+                    chain_name = std::make_unique<std::string>(data.chain_id[it_atomIndex]);
+                    res_name = std::make_unique<std::string>(data.residue_name[it_atomIndex]);
+                    res_id = &data.residue_id[it_atomIndex];
+                }
+                bool fetched_all_residue_data = res_name != nullptr && chain_name != nullptr && res_id != nullptr;
+                
+                std::string atom_type = "X";
+                std::string atom_name = "";
+
+                if (profile.atom_type_size_ok)
+                    atom_type = data.atom_type_symbol[it_atomIndex];
+                if (profile.atom_authLabel_size_ok)
+                    atom_name = data.auth_atom_label[it_atomIndex];
+                else if (profile.atom_label_size_ok)
+                    atom_name = data.atom_label[it_atomIndex];
+                else
+                    atom_name = atom_type;
+
+                auto atom = Atom(atom_name, atom_type);
+
+                if (profile.atom_id_size_ok)
+                    atom.set("id", data.atom_id[it_atomIndex]);
+
+                positions[it_atomIndex][0] = data.atom_x[it_atomIndex];
+                positions[it_atomIndex][1] = data.atom_y[it_atomIndex];
+                positions[it_atomIndex][2] = data.atom_z[it_atomIndex];
+
+                frame[it_atomIndex] = std::move(atom);
+                atoms_waiting_for_residue_data.emplace(std::make_pair(atom_name, it_atomIndex));
+                
+                if (res_name == nullptr)
+                    continue;
+
+                bool current_residue_has_implicit_neightbour_bonding = expect_implicit_inter_residue_bonding(*res_name);
+                if (current_inter_residue_forward_linking_atom == 0xffffffffffffffff && current_residue_has_implicit_neightbour_bonding && is_residue_forward_binder(atom_name))
+                    current_inter_residue_forward_linking_atom = it_atomIndex;
+                if (current_residue_has_implicit_neightbour_bonding && is_residue_backward_binder(atom_name) && previous_inter_residue_forward_linking_atom != 0xffffffffffffffff)
+                {
+                    frame.add_bond(previous_inter_residue_forward_linking_atom, it_atomIndex, Bond::SINGLE);
+                }
+
+                // We create implicit bound between contiguous residues
+                if (res_name != nullptr
+                    && (*res_name == "N" || *res_name == "P")
+                    && previous_inter_residue_forward_linking_atom != 0xffffffffffffffff
+                    && current_residue_has_implicit_neightbour_bonding
+                    )
+                {
+                    frame.add_bond(previous_inter_residue_forward_linking_atom, it_atomIndex, Bond::SINGLE);
+                }
+                if (fetched_all_residue_data && !atom_name.empty())
+                {
+                    // We store atom index related to some strut_conn bounding for quick access later.
+                    BCIFFormat::BCIFData::StructConnMapKey struct_conn_key{*chain_name, *res_name, *res_id, atom_name };
+                    if (data.struct_conn_map.count(struct_conn_key) > 0)
+                    {
+                        atoms_waiting_for_struct_conn_bounding[struct_conn_key] = it_atomIndex;
                     }
                 }
             }
-        }
-        inline void create_bonds_interResidues(const BCIFFormat::BCIFData& data_, Frame& frame)
-        {
-            // First, add explicit bonds from _struct_conn (inter-residue bonds, disulfides, etc.)
-            create_bonds_from_struct_conn(data_, frame);
 
-            
-            // Then add automatic peptide bonds between consecutive residues on the same chain
-            // Peptide bond: C atom of residue N connects to N atom of residue N+1
-            auto& residues = frame.topology().residues();
+            // Since we only create the residue once its last atom is done iterating, we need a last round after the loop.
+            if (res_name != nullptr && res_id != nullptr && !atoms_waiting_for_residue_data.empty() && profile.residue_data_size_ok)
+                create_residue(data, frame, *res_name, *res_id, atoms_waiting_for_residue_data, it_atomIndex, previous_inter_residue_forward_linking_atom, current_inter_residue_forward_linking_atom);
 
-            // Group residues by chain ID
-            std::map<std::string, std::vector<size_t>> residues_by_chain;
-            for (size_t res_idx = 0; res_idx < residues.size(); ++res_idx) {
-                auto chain_prop = residues[res_idx].get("chainid");
-                std::string chain_id = chain_prop ? chain_prop->as_string() : "";
-                residues_by_chain[chain_id].push_back(res_idx);
+            for (auto& it_struct_conn : data.struct_conns)
+            {
+                    BCIFFormat::BCIFData::StructConnMapKey key1{it_struct_conn.ptnr1.label_asym_id, it_struct_conn.ptnr1.label_comp_id, it_struct_conn.ptnr1.label_seq_id, it_struct_conn.ptnr1.label_atom_id};
+                    BCIFFormat::BCIFData::StructConnMapKey key2{it_struct_conn.ptnr2.label_asym_id, it_struct_conn.ptnr2.label_comp_id, it_struct_conn.ptnr2.label_seq_id, it_struct_conn.ptnr2.label_atom_id};
+                    if (atoms_waiting_for_struct_conn_bounding.count(key1) > 0 && atoms_waiting_for_struct_conn_bounding.count(key2) > 0)
+                    {
+                        frame.add_bond(atoms_waiting_for_struct_conn_bounding[key1], atoms_waiting_for_struct_conn_bounding[key2]);
+                    }
             }
-
-            // For each chain, sort residues by ID and create peptide bonds
-            for (auto& chain_entry : residues_by_chain) {
-                auto& chain_residues = chain_entry.second;
-
-                // Sort residues by residue ID
-                std::sort(chain_residues.begin(), chain_residues.end(),
-                    [&residues](size_t a, size_t b) {
-                        auto id_a = residues[a].id();
-                        auto id_b = residues[b].id();
-                        if (!id_a) return false;
-                        if (!id_b) return true;
-                        return *id_a < *id_b;
-                    });
-                create_bonds_interResidues_chain(data_, chain_residues, frame);
-            }
-            
-        }
-        inline void create_bonds(const BCIFFormat::BCIFData& data_, Frame& frame)
-        {
-            create_bonds_intraResidues(data_, frame);
-            create_bonds_interResidues(data_, frame);
         }
 
     }
-
     void BCIFFormat::read(Frame& frame) {
         if (!decoded_) {
             throw file_error("the BCIF file has not been decoded");
@@ -3912,9 +3979,8 @@ namespace chemfiles
         if (natoms != data_->atom_y.size() || natoms != data_->atom_z.size()) {
             throw format_error("BCIF atom coordinate arrays have inconsistent sizes");
         }
-
-        create_atoms(*data_, frame);
-        create_atoms(*data_, frame);
+        DataProfile profile(*data_);
+        fill_atomistic_data(*data_, profile, frame);
 
         // Set unit cell
         if (data_->cell_length_a > 0.0 && data_->cell_length_b > 0.0 && data_->cell_length_c > 0.0) {
@@ -3928,13 +3994,9 @@ namespace chemfiles
             frame.set("pdb_idcode", data_->entry_id);
         }
 
-        create_residues(*data_, frame);
-        create_bonds(*data_, frame);
-
         // For now, we only support single model
         model_index_++;
     }
-
     void BCIFFormat::write(const Frame& frame) {
         if (mode_ != File::WRITE) {
             throw file_error("cannot write to BCIF file opened in read mode");
@@ -3955,8 +4017,6 @@ namespace chemfiles
 
         has_written_ = true;
     }
-
-
     void BCIFFormat::decode(const std::string& data) {
 
         // Quick note on the types when dealing with [packed] numbers : 
@@ -3971,10 +4031,10 @@ namespace chemfiles
         //  32 = Float32
         //  33 = Float64
         try {
-            // Unpack the MessagePack data (use C++03 style API like MMTF)
+                
             msgpack::object_handle oh;
             msgpack::unpack(oh, data.data(), data.size());
-            
+
             auto obj = oh.get();
 
             // BCIF structure: { dataBlocks: [ { header, categories: [ ... ] } ] }
