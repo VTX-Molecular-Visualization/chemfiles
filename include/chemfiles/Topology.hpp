@@ -184,6 +184,17 @@ public:
     /// @param size the number of elements to reserve memory for
     void reserve(size_t size);
 
+    /// Allocate memory in the frame to be able to store data for `size` bonds.
+    ///
+    /// This function does not change the actual number of bonds in the
+    /// topology, and should be used as an optimisation.
+    ///
+    /// @example{topology/reserve_bonds.cpp}
+    ///
+    /// @param size the number of elements to reserve memory for
+    void reserve_bonds(size_t size);
+
+
     /// Get the bonds in the system
     ///
     /// The bonds are sorted according to `operator<(const Bond&, const Bond&)`,

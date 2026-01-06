@@ -53,6 +53,10 @@ void Frame::reserve(size_t size) {
     }
 }
 
+void Frame::reserve_bonds(size_t size) {
+    topology_.reserve_bonds(std::move(size));
+}
+
 void Frame::add_velocities() {
     if (!velocities_) {
         velocities_ = std::vector<Vector3D>(size());

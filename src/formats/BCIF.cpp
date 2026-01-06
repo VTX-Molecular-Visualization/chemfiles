@@ -578,7 +578,7 @@ namespace msgpack {
                 // Decode based on column name
                 if (column_name == "Cartn_x") {
                     decode_column(data_obj, data.atom_x);
-                    // Masks for float columns would need special handling
+                    // Mask not supported
                 }
                 else if (column_name == "Cartn_y") {
                     decode_column(data_obj, data.atom_y);
@@ -588,21 +588,15 @@ namespace msgpack {
                 }
                 else if (column_name == "type_symbol") {
                     decode_column(data_obj, data.atom_type_symbol);
-                    if (has_mask && !mask.empty()) {
-                        //data.atom_type_symbol = apply_mask(data.atom_type_symbol, mask);
-                    }
+                    // Mask not supported
                 }
                 else if (column_name == "label_atom_id") {
                     decode_column(data_obj, data.atom_label);
-                    if (has_mask && !mask.empty()) {
-                        //data.atom_label = apply_mask(data.atom_label, mask);
-                    }
+                    // Mask not supported
                 }
                 else if (column_name == "auth_atom_id") {
                     decode_column(data_obj, data.auth_atom_label);
-                    if (has_mask && !mask.empty()) {
-                        //data.auth_atom_label = apply_mask(data.auth_atom_label, mask);
-                    }
+                    // Mask not supported
                 }
                 else if (column_name == "id") {
                     decode_column(data_obj, data.atom_id);
@@ -613,9 +607,7 @@ namespace msgpack {
                 // Residue information
                 else if (column_name == "label_comp_id") {
                     decode_column(data_obj, data.residue_name);
-                    if (has_mask && !mask.empty()) {
-                        //data.residue_name = apply_mask(data.residue_name, mask);
-                    }
+                    // Mask not supported
                 }
                 else if (column_name == "label_seq_id") {
                     // Use label_seq_id as primary residue ID (matches mmCIF implementation)
@@ -634,22 +626,16 @@ namespace msgpack {
                 else if (column_name == "label_asym_id") {
                     // Use label_asym_id as primary chain ID (matches mmCIF implementation)
                     decode_column(data_obj, data.chain_id);
-                    if (has_mask && !mask.empty()) {
-                        //data.chain_id = apply_mask(data.chain_id, mask);
-                    }
+                    // Mask not supported
                 }
                 else if (column_name == "auth_asym_id") {
                     // Store auth_asym_id for round-trip writing
                     decode_column(data_obj, data.auth_chain_id);
-                    if (has_mask && !mask.empty()) {
-                        //data.auth_chain_id = apply_mask(data.auth_chain_id, mask);
-                    }
+                    // Mask not supported
                 }
                 else if (column_name == "pdbx_PDB_ins_code") {
                     decode_column(data_obj, data.insertion_code);
-                    if (has_mask && !mask.empty()) {
-                        //data.insertion_code = apply_mask(data.insertion_code, mask);
-                    }
+                    // Mask not supported
                 }
             }
 
@@ -3636,6 +3622,51 @@ namespace chemfiles
 
     namespace
     {
+        // Class responsible for measuring cumulative execution time using RAII principle
+        // chrono calls with the same id will accumulate time. 
+        // A report will rise the this class's instance deconstruction.
+        class FunctionTimer
+        {
+        public:
+            struct ElapsedTIme {
+                float timeMs = 0.f;
+                uint32_t numCall = 0;
+            };
+            class RaiiChrono
+            {
+                ElapsedTIme* _data = nullptr;
+                std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
+            public:
+                RaiiChrono() = delete;
+                RaiiChrono(ElapsedTIme& data)
+                    :_data(&data)
+                {
+                }
+                ~RaiiChrono()
+                {
+                    _data->timeMs += std::chrono::duration_cast<std::chrono::duration<float, std::milli>>(std::chrono::steady_clock::now() - t0).count();
+                    _data->numCall++;
+                }
+                RaiiChrono(const RaiiChrono&) = delete;
+                RaiiChrono& operator=(const RaiiChrono&) = delete;
+                RaiiChrono(RaiiChrono&&) = default;
+                RaiiChrono& operator=(RaiiChrono&&) = default;
+            };
+            RaiiChrono chrono(std::string id)
+            {
+                if (_data.count(id) == 0)
+                    _data.emplace(id, ElapsedTIme());
+                return RaiiChrono(_data.at(id));
+            }
+            ~FunctionTimer()
+            {
+                for (auto& it_ : _data)
+                    std::cout << it_.first << " : " << "\n\t Num call : " << it_.second.numCall << "\n\t Total elapsed time : " << it_.second.timeMs << "ms.\n\n";
+            }
+        private:
+            std::map<std::string, ElapsedTIme> _data;
+        } g_functionTimer;
+
         struct DataProfile
         {
             DataProfile(const BCIFFormat::BCIFData& data)
@@ -3647,9 +3678,9 @@ namespace chemfiles
                 residue_data_size_ok(data.atom_z.size() == data.residue_name.size()  &&
                    data.atom_z.size() == data.residue_id.size()                      &&
                    data.atom_z.size() == data.chain_id.size()                        &&
-                   data.atom_z.size() == data.insertion_code.size()                  &&
                    data.atom_z.size() == data.auth_residue_id.size()                 &&
                    data.atom_z.size() == data.auth_chain_id.size())
+                , insertion_code_ok(data.atom_z.size() == data.insertion_code.size())
             { }
 
             bool atom_type_size_ok =         false;
@@ -3657,6 +3688,7 @@ namespace chemfiles
             bool atom_label_size_ok =        false;
             bool atom_id_size_ok =           false;
             bool residue_data_size_ok =      false;
+            bool insertion_code_ok =      false;
         };
 
         inline void create_atoms(const BCIFFormat::BCIFData& data_, Frame& frame)
@@ -3697,6 +3729,10 @@ namespace chemfiles
                 positions[i][2] = data_.atom_z[i];
             }
 
+        }
+        inline void _add_bond(Frame& frame, size_t atom1, size_t atom2, chemfiles::Bond::BondOrder bond_order)
+        {
+            frame.add_bond(atom1, atom2, bond_order);
         }
 
         inline void assign_secondary_structure(const BCIFFormat::BCIFData& data_, const std::string& chain_id, const int64_t& residue_id, chemfiles::Residue& residue)
@@ -3760,7 +3796,8 @@ namespace chemfiles
                         continue;
 
                     Bond::BondOrder bond_order = parse_bond_order(it2_bondOrder);
-                    frame.add_bond(it_atomIndex, atoms.at(it2_atomName2), bond_order);
+                    _add_bond(frame, it_atomIndex, atoms.at(it2_atomName2), bond_order);
+                    //frame.add_bond(it_atomIndex, atoms.at(it2_atomName2), bond_order);
                     bounded_atoms.insert(std::move(p12));
                     bounded_atoms.insert(std::move(p21));
                 }
@@ -3817,7 +3854,8 @@ namespace chemfiles
             create_intra_residue_bonds(data.chem_comp_bonds_map, res_name, atoms_waiting_for_residue_data, frame);
             Residue residue(res_name, res_id);
             residue.set("chainid", data.chain_id[last_index]);
-            residue.set("insertion_code", data.insertion_code[last_index]);
+            if (data.insertion_code.size() > last_index)
+                residue.set("insertion_code", data.insertion_code[last_index]);
             residue.set("chainname", data.auth_chain_id[last_index]);
             residue.set("auth_seq_id", static_cast<double>(data.auth_residue_id[last_index]));
             for (auto& [_, it_atomIdx] : atoms_waiting_for_residue_data)
@@ -3835,7 +3873,7 @@ namespace chemfiles
         {
             const size_t& natoms = data.atom_x.size();
             frame.resize(natoms);
-            // TODO : make room in the bond collection for 3*natoms
+            frame.reserve_bonds(natoms * 3);
             auto positions = frame.positions();
 
             std::map<BCIFFormat::BCIFData::StructConnMapKey, AtomIndex> atoms_waiting_for_struct_conn_bounding;
@@ -3921,23 +3959,25 @@ namespace chemfiles
                 if (res_name == nullptr)
                     continue;
 
-                bool current_residue_has_implicit_neightbour_bonding = expect_implicit_inter_residue_bonding(*res_name);
-                if (current_inter_residue_forward_linking_atom == 0xffffffffffffffff && current_residue_has_implicit_neightbour_bonding && is_residue_forward_binder(atom_name))
-                    current_inter_residue_forward_linking_atom = it_atomIndex;
-                if (current_residue_has_implicit_neightbour_bonding && is_residue_backward_binder(atom_name) && previous_inter_residue_forward_linking_atom != 0xffffffffffffffff)
-                {
-                    frame.add_bond(previous_inter_residue_forward_linking_atom, it_atomIndex, Bond::SINGLE);
-                }
-
                 // We create implicit bound between contiguous residues
-                if (res_name != nullptr
-                    && (*res_name == "N" || *res_name == "P")
-                    && previous_inter_residue_forward_linking_atom != 0xffffffffffffffff
+                bool current_residue_has_implicit_neightbour_bonding = expect_implicit_inter_residue_bonding(*res_name);
+                if (current_inter_residue_forward_linking_atom == 0xffffffffffffffff
                     && current_residue_has_implicit_neightbour_bonding
+                    && is_residue_forward_binder(atom_name)
                     )
                 {
-                    frame.add_bond(previous_inter_residue_forward_linking_atom, it_atomIndex, Bond::SINGLE);
+                    current_inter_residue_forward_linking_atom = it_atomIndex;
                 }
+                
+                if (current_residue_has_implicit_neightbour_bonding 
+                    && is_residue_backward_binder(atom_name) 
+                    && previous_inter_residue_forward_linking_atom != 0xffffffffffffffff
+                    )
+                {
+                    _add_bond(frame, previous_inter_residue_forward_linking_atom, it_atomIndex, Bond::SINGLE);
+                    //frame.add_bond(previous_inter_residue_forward_linking_atom, it_atomIndex, Bond::SINGLE);
+                }
+
                 if (fetched_all_residue_data && !atom_name.empty())
                 {
                     // We store atom index related to some strut_conn bounding for quick access later.
@@ -3953,13 +3993,15 @@ namespace chemfiles
             if (res_name != nullptr && res_id != nullptr && !atoms_waiting_for_residue_data.empty() && profile.residue_data_size_ok)
                 create_residue(data, frame, *res_name, *res_id, atoms_waiting_for_residue_data, it_atomIndex, previous_inter_residue_forward_linking_atom, current_inter_residue_forward_linking_atom);
 
+
             for (auto& it_struct_conn : data.struct_conns)
             {
                     BCIFFormat::BCIFData::StructConnMapKey key1{it_struct_conn.ptnr1.label_asym_id, it_struct_conn.ptnr1.label_comp_id, it_struct_conn.ptnr1.label_seq_id, it_struct_conn.ptnr1.label_atom_id};
                     BCIFFormat::BCIFData::StructConnMapKey key2{it_struct_conn.ptnr2.label_asym_id, it_struct_conn.ptnr2.label_comp_id, it_struct_conn.ptnr2.label_seq_id, it_struct_conn.ptnr2.label_atom_id};
                     if (atoms_waiting_for_struct_conn_bounding.count(key1) > 0 && atoms_waiting_for_struct_conn_bounding.count(key2) > 0)
                     {
-                        frame.add_bond(atoms_waiting_for_struct_conn_bounding[key1], atoms_waiting_for_struct_conn_bounding[key2]);
+                        _add_bond(frame, atoms_waiting_for_struct_conn_bounding[key1], atoms_waiting_for_struct_conn_bounding[key2], Bond::UNKNOWN);
+                        //frame.add_bond(atoms_waiting_for_struct_conn_bounding[key1], atoms_waiting_for_struct_conn_bounding[key2], Bond::SINGLE);
                     }
             }
         }

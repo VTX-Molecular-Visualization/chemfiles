@@ -177,6 +177,14 @@ public:
     /// @example{frame/reserve.cpp}
     void reserve(size_t size);
 
+    /// Allocate memory in the frame to have enough size for `size` bonds.
+    ///
+    /// This function does not change the actual number of bonds in the frame,
+    /// and should be used as an optimisation.
+    ///
+    /// @example{frame/reserve.cpp}
+    void reserve_bonds(size_t size);
+
     /// Add an `atom` at the given `position` and optionally with the given
     /// `velocity`. The `velocity` value will only be used if this frame
     /// contains velocity data.

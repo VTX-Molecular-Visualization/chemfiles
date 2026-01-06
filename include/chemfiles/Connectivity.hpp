@@ -301,6 +301,16 @@ class Connectivity final {
 public:
     Connectivity() = default;
 
+    /// Allocate memory in the frame to be able to store data for `size` bonds.
+    ///
+    /// This function does not change the actual number of bonds in the
+    /// topology, and should be used as an optimisation.
+    ///
+    /// @example{connectivity/reserve_bonds.cpp}
+    ///
+    /// @param size the number of elements to reserve memory for
+    void reserve_bonds(size_t size);
+
     /// Get the bonds in this connectivity
     const sorted_set<Bond>& bonds() const;
 

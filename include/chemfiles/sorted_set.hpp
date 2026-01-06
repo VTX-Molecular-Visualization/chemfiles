@@ -44,6 +44,11 @@ public:
     using super::clear;
     using super::erase;
 
+    void reserve(size_t size)
+    {
+        super::reserve(size);
+    }
+
     std::pair<iterator, bool> insert(const value_type& value) {
         auto it = std::lower_bound(super::begin(), super::end(), value);
         if (it == super::end() || *it != value) {

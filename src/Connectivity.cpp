@@ -158,6 +158,12 @@ void Connectivity::recalculate() const {
     uptodate_ = true;
 }
 
+void Connectivity::reserve_bonds(size_t size)
+{
+    bond_orders_.reserve(size);
+    bonds_.reserve(size);
+}
+
 const sorted_set<Bond>& Connectivity::bonds() const {
     return bonds_;
 }

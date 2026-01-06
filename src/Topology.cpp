@@ -33,7 +33,11 @@ void Topology::add_atom(Atom atom) {
 }
 
 void Topology::reserve(size_t size) {
-    atoms_.reserve(size);
+    atoms_.reserve(std::move(size));
+}
+
+void Topology::reserve_bonds(size_t size) {
+    connect_.reserve_bonds(size);
 }
 
 void Topology::add_bond(size_t atom_i, size_t atom_j, Bond::BondOrder bond_order) {
