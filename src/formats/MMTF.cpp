@@ -255,17 +255,10 @@ std::string MMTFFormat::find_assembly() {
     // one our current chain belongs to. Fortunately, these lists are fairly
     // short in the vast majority of cases.
 
-    size_t firstChainIndexOfCurrentModel = 0;
-
-    for (int i = 0; i < modelIndex_; i++)
-        firstChainIndexOfCurrentModel += structure_.chainsPerModel[ i ];
-
-    const size_t localChainIndex = chainIndex_ - firstChainIndexOfCurrentModel;
-
     for (const auto& assembly : structure_.bioAssemblyList) {
         for (const auto& transform : assembly.transformList) {
             for (auto id : transform.chainIndexList) {
-                if (static_cast<size_t>(id) == localChainIndex) {
+                if (static_cast<size_t>(id) == chainIndex_) {
                     return "bio" + assembly.name;
                 }
             }
@@ -376,15 +369,13 @@ void MMTFFormat::apply_symmetry(Frame& frame) {
     using bond_w_order = std::pair<Bond, Bond::BondOrder>;
     std::vector<bond_w_order> bonds_to_add;
 
-    const auto chainIDOffset = chainIndex_ - structure_.chainsPerModel[modelIndex_-1];
-
     for (const auto& assembly : structure_.bioAssemblyList) {
 
         for (const auto& transform : assembly.transformList) {
 
             std::unordered_set<double> chains_to_transform;
             for (auto id : transform.chainIndexList) {
-                chains_to_transform.insert(static_cast<double>(chainIDOffset+id));
+                chains_to_transform.insert(static_cast<double>(id));
             }
 
             // ncs is a 4x4 matrix stored in column major order.

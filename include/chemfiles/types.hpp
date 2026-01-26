@@ -58,11 +58,6 @@ public:
     /// @example{vector3d/norm.cpp}
     double norm() const;
 
-    /// Compute the sqr euclidean norm of this Vector3D.
-    ///
-    /// @example{vector3d/norm.cpp}
-    double sqrNorm() const;
-
     /// Compound addition of two vectors
     Vector3D& operator+=(const Vector3D& rhs);
 
@@ -95,9 +90,6 @@ inline Vector3D cross(const Vector3D& lhs, const Vector3D& rhs) {
 
 inline double Vector3D::norm() const {
     return std::sqrt(dot(*this, *this));
-}
-inline double Vector3D::sqrNorm() const {
-    return dot(*this, *this);
 }
 
 /// Compare two vectors for equality using float equality

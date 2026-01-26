@@ -6,13 +6,13 @@
 
 #include <cstddef>
 #include <string>
-#include <unordered_map>
 #include <vector>
+#include <unordered_map>
 
 #include "chemfiles/Atom.hpp"
 #include "chemfiles/Connectivity.hpp"
-#include "chemfiles/Error.hpp"
 #include "chemfiles/Residue.hpp"
+#include "chemfiles/Error.hpp"
 #include "chemfiles/exports.h"
 
 #include "chemfiles/external/optional.hpp"
@@ -141,18 +141,6 @@ public:
     /// @throws OutOfBounds if `atom_i` or `atom_j` are greater than `size()`
     /// @throws Error if no bond between `atom_i` and `atom_j` exists.
     Bond::BondOrder bond_order(size_t atom_i, size_t atom_j) const;
-
-    /// Get the bond order for the given bond
-    ///
-    /// If the bond does not exist, this will thrown an Error.
-    ///
-    /// @param i the index of the first atom in the bond
-    /// @param j the index of the second atom in the bond
-    /// @param order new bond order
-    /// @throws OutOfBounds if `atom_i` or `atom_j` are greater than `size()`
-    /// @throws Error if no bond between `atom_i` and `atom_j` exists.
-     void change_bond_order(size_t i, size_t j, Bond::BondOrder order);
-
 
     /// Get the number of atoms in the topology
     ///
