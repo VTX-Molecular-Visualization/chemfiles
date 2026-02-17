@@ -4,3 +4,4 @@ out/
 .vs/
 *.pyc
 CMakeSettings.json
+/CMakeUserPresets.json
