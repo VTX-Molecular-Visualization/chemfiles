@@ -229,109 +229,9 @@ namespace chemfiles {
 }
 
 
-namespace
-{
-
-    // See http://www.wwpdb.org/documentation/file-format-content/format23/sect5.html
-    // for definitions of helix types
-    static const char* HELIX_TYPES[10] = {
-        "right-handed alpha helix",
-        "right-handed omega helix",
-        "right-handed pi helix",
-        "right-handed gamma helix",
-        "right-handed 3-10 helix",
-        "left-handed alpha helix",
-        "left-handed omega helix",
-        "left-handed gamma helix",
-        "2-7 ribbon/helix",
-        "polyproline",
-    };
-    static const char* PDB_BETA_SHEET = "extended";
-
-    // Convert BCIF/mmCIF conf_type_id to PDB-style secondary structure name
-    const char* bcif_to_pdb_secondary_structure(const std::string& conf_type_id) {
-        // BCIF/mmCIF conf_type_id values from mmCIF dictionary
-        // See: http://mmcif.wwpdb.org/dictionaries/mmcif_pdbx_v50.dic/Items/_struct_conf.conf_type_id.html
-
-        if (conf_type_id == "HELX_RH_AL_P") return HELIX_TYPES[0];  // right-handed alpha
-        if (conf_type_id == "HELX_RH_OM_P") return HELIX_TYPES[1];  // right-handed omega
-        if (conf_type_id == "HELX_RH_PI_P") return HELIX_TYPES[2];  // right-handed pi
-        if (conf_type_id == "HELX_RH_GA_P") return HELIX_TYPES[3];  // right-handed gamma
-        if (conf_type_id == "HELX_RH_3T_P") return HELIX_TYPES[4];  // right-handed 3-10
-        if (conf_type_id == "HELX_LH_AL_P") return HELIX_TYPES[5];  // left-handed alpha
-        if (conf_type_id == "HELX_LH_OM_P") return HELIX_TYPES[6];  // left-handed omega
-        if (conf_type_id == "HELX_LH_GA_P") return HELIX_TYPES[7];  // left-handed gamma
-        if (conf_type_id == "HELX_RH_27_P") return HELIX_TYPES[8];  // 2-7 ribbon/helix
-        if (conf_type_id == "HELX_LH_PP_P") return HELIX_TYPES[9];  // polyproline
-
-        // HELX_P is a generic helix - default to alpha helix
-        if (conf_type_id == "HELX_P") return HELIX_TYPES[0];
-
-        // Beta strands/sheets
-        if (conf_type_id == "STRN") return "extended";
-
-        // Turns (various types all map to "turn" in PDB)
-        if (conf_type_id.find("TURN") == 0) return "turn";
-
-        // If unknown, return the original value
-        return nullptr;
-    }
-
-    // Convert PDB-style secondary structure name back to BCIF conf_type_id
-    std::string pdb_to_bcif_secondary_structure(const std::string& pdb_ss) {
-        if (pdb_ss == "right-handed alpha helix") return "HELX_RH_AL_P";
-        if (pdb_ss == "right-handed omega helix") return "HELX_RH_OM_P";
-        if (pdb_ss == "right-handed pi helix") return "HELX_RH_PI_P";
-        if (pdb_ss == "right-handed gamma helix") return "HELX_RH_GA_P";
-        if (pdb_ss == "right-handed 3-10 helix") return "HELX_RH_3T_P";
-        if (pdb_ss == "left-handed alpha helix") return "HELX_LH_AL_P";
-        if (pdb_ss == "left-handed omega helix") return "HELX_RH_OM_P";
-        if (pdb_ss == "left-handed gamma helix") return "HELX_LH_GA_P";
-        if (pdb_ss == "2-7 ribbon/helix") return "HELX_RH_27_P";
-        if (pdb_ss == "polyproline") return "HELX_LH_PP_P";
-        if (pdb_ss == "extended") return "STRN";
-        if (pdb_ss == "turn") return "TURN_TY1_P";  // Default turn type
-
-        // If unknown, return generic helix
-        return "HELX_P";
-    }
-
-    // Get helix class (1-10) from PDB secondary structure name, or 0 if not a helix
-    int32_t get_helix_class_from_pdb_ss(const std::string& pdb_ss) {
-        // HELIX_TYPES array maps indices 0-9 to helix classes 1-10
-        for (int i = 0; i < 10; ++i) {
-            if (pdb_ss == HELIX_TYPES[i]) {
-                return i + 1;  // Return class 1-10
-            }
-        }
-        return 0;  // Not a helix
-    }
-
-    // Convert mmCIF bond order string to Bond::BondOrder enum
-    Bond::BondOrder parse_bond_order(const std::string& value_order) {
-        if (value_order == "SING" || value_order == "sing") return Bond::SINGLE;
-        if (value_order == "DOUB" || value_order == "doub") return Bond::DOUBLE;
-        if (value_order == "TRIP" || value_order == "trip") return Bond::TRIPLE;
-        if (value_order == "QUAD" || value_order == "quad") return Bond::QUADRUPLE;
-        if (value_order == "AROM" || value_order == "arom") return Bond::AROMATIC;
-        // Default to SINGLE for empty or unknown bond orders
-        if (value_order.empty()) return Bond::UNKNOWN;
-        return Bond::UNKNOWN;
-    }
-
-    // Convert Bond::BondOrder enum to mmCIF bond order string
-    std::string bond_order_to_string(Bond::BondOrder order) {
-        switch (order) {
-            case Bond::SINGLE: return "SING";
-            case Bond::DOUBLE: return "DOUB";
-            case Bond::TRIPLE: return "TRIP";
-            case Bond::QUADRUPLE: return "QUAD";
-            case Bond::AROMATIC: return "AROM";
-            case Bond::UNKNOWN: return "?";
-            default: return "?";  
-        }
-    }
-}
+// Import BCIF implementation utilities
+#include "chemfiles/formats/BCIF_impl.hpp"
+using namespace chemfiles::bcif_impl;
 
 // =============================================================================
 // Free functions in msgpack namespace for BCIF decoding
@@ -545,8 +445,6 @@ namespace msgpack {
             return result;
         }
         
-        namespace
-        {
             inline void get_name_and_data(msgpack::object_map& col_map, std::string& column_name, msgpack::object& data_obj, bool& found_data, msgpack::object& mask_obj, bool& has_mask)
             {
                 for (uint32_t j = 0; j < col_map.size; ++j) {
@@ -632,7 +530,6 @@ namespace msgpack {
                 }
             }
 
-        }
         void parse_atom_site(const msgpack::object & category, BCIFData & data) {
             // Get columns array from category
             msgpack::object columns_obj;
@@ -774,8 +671,6 @@ namespace msgpack {
             }
         }
 
-        namespace
-        {
             struct StructConfData
             {
                 std::vector<std::string> conf_type_id;
@@ -916,7 +811,6 @@ namespace msgpack {
                         }
                 }
             }
-        }
         void parse_struct_conf(const msgpack::object & category, BCIFData & data) {
             // Get columns array from category
             msgpack::object columns_obj;
@@ -963,7 +857,6 @@ namespace msgpack {
             parse_struct_conf_build_ss_map(struct_data, data);
         }
 
-        namespace {
             struct StructSheetData
             {
                 std::vector<std::string> beg_label_asym_id;
@@ -1074,7 +967,6 @@ namespace msgpack {
                         }
                 }
             }
-        }
         void parse_struct_sheet_range(const msgpack::object & category, BCIFData & data) {
             // Get columns array from category
             msgpack::object columns_obj;
@@ -1122,8 +1014,6 @@ namespace msgpack {
             parse_struct_sheet_range_build_ss_map(struct_data, data);
         }
         
-        namespace
-        {
             struct ChemCompBondData
             {
                 std::vector<std::string> comp_id;
@@ -1214,7 +1104,6 @@ namespace msgpack {
                 }
 
             }
-        }
         void parse_chem_comp_bond(const msgpack::object & category, BCIFData & data) {
             // Get columns array from category
             msgpack::object columns_obj;
@@ -1261,8 +1150,6 @@ namespace msgpack {
             generate_bonds(bond_data, data.chem_comp_bonds, data.chem_comp_bonds_map);
         }
 
-        namespace
-        {
             struct StructConnData
             {
                 struct LinkPartner
@@ -1373,7 +1260,6 @@ namespace msgpack {
                     }
                 }
             }
-        }
         void parse_struct_conn(const msgpack::object & category, BCIFData & data) {
             // Get columns array from category
             msgpack::object columns_obj;
@@ -1421,8 +1307,6 @@ namespace msgpack {
             generate_structconn(struct_data, data.struct_conns, data.struct_conn_map);
         }
 
-        namespace
-        {
             inline void get_data_and_encoding(const msgpack::object_map& col_map, msgpack::object& data_obj, bool& found_data, msgpack::object& encoding_obj, bool& found_encoding)
             {
 
@@ -1452,19 +1336,6 @@ namespace msgpack {
                 }
                 return ret;
             }
-            inline void get_int_type_str(const int32_t& type_code, std::string& type_str)
-            {
-                if (type_code == 1) type_str = "Int8";
-                else if (type_code == 2) type_str = "Int16";
-                else if (type_code == 4) type_str = "Int32";
-                else if (type_code == 5) type_str = "Uint8";
-                else if (type_code == 6) type_str = "Uint16";
-                else if (type_code == 8) type_str = "Uint32";
-                else if (type_code == 32) type_str = "Float32";
-                else if (type_code == 33) type_str = "Float64";
-                else type_str = "Int32";  // fallback
-            }
-
             inline void decode_integer_column_bytearray(
                 const msgpack::object_map& enc_map,
                 const msgpack::object_array& encodings,
@@ -1630,7 +1501,6 @@ namespace msgpack {
                 // Note: FixedPoint is NOT handled here - it's applied in decode_float_column
                 // because it converts int32 to double
             }
-        }
         void decode_column(const msgpack::object & column, std::vector<int32_t>& result) {
             // Column data structure: { data: <encoded>, encoding: [ {kind, ...}, ... ] }
             if (column.type != msgpack::type::MAP) {
@@ -1679,38 +1549,6 @@ namespace msgpack {
             return ;
         }
 
-        namespace
-        {
-            inline void decode_float_column_float32(const uint8_t* bytes, const size_t& size, std::vector<double>& result)
-            {
-                result.resize(size / 4);
-                for (size_t k = 0; k < result.size(); ++k) {
-                    uint32_t bits = bytes[k * 4]
-                        | (static_cast<uint32_t>(bytes[k * 4 + 1]) << 8)
-                        | (static_cast<uint32_t>(bytes[k * 4 + 2]) << 16)
-                        | (static_cast<uint32_t>(bytes[k * 4 + 3]) << 24);
-                    float f;
-                    std::memcpy(&f, &bits, sizeof(float));
-                    result[k] = static_cast<double>(f);
-                }
-            }
-            inline void decode_float_column_float64(const uint8_t* bytes, const size_t& size, std::vector<double>& result)
-            {
-                result.resize(size / 8);
-                for (size_t k = 0; k < result.size(); ++k) {
-                    uint64_t bits = static_cast<uint64_t>(bytes[k * 8])
-                        | (static_cast<uint64_t>(bytes[k * 8 + 1]) << 8)
-                        | (static_cast<uint64_t>(bytes[k * 8 + 2]) << 16)
-                        | (static_cast<uint64_t>(bytes[k * 8 + 3]) << 24)
-                        | (static_cast<uint64_t>(bytes[k * 8 + 4]) << 32)
-                        | (static_cast<uint64_t>(bytes[k * 8 + 5]) << 40)
-                        | (static_cast<uint64_t>(bytes[k * 8 + 6]) << 48)
-                        | (static_cast<uint64_t>(bytes[k * 8 + 7]) << 56);
-                    double d;
-                    std::memcpy(&d, &bits, sizeof(double));
-                    result[k] = d;
-                }
-            }
             inline void decode_float_column_raw_float(const msgpack::object& data_obj, const msgpack::object_array& encodings, std::vector<double>& result)
             {
 
@@ -1756,7 +1594,6 @@ namespace msgpack {
                     }
                 }
             }
-        }
         void decode_column(const msgpack::object & column, std::vector<double>& result) {
             if (column.type != msgpack::type::MAP) {
                 return ;
@@ -1895,103 +1732,6 @@ namespace msgpack {
 
             return result;
         }
-        namespace
-        {
-            inline void decode_integer_packing_1byte(const std::vector<uint8_t>& data,
-                const int32_t& byte_count, const bool& is_unsigned, std::vector<int32_t>& result)
-            {
-                // Determine the upper and lower limits for 8-bit values
-                int32_t upper_limit = is_unsigned ? UINT8_MAX : INT8_MAX;
-                int32_t lower_limit = is_unsigned ? 0 : INT8_MIN;
-
-                size_t i = 0;
-                while (i < data.size()) {
-                    int32_t value = 0;
-                    int32_t t;
-                    if (is_unsigned) {
-                        t = static_cast<int32_t>(data[i]);
-                    }
-                    else {
-                        t = static_cast<int32_t>(static_cast<int8_t>(data[i]));
-                    }
-
-                    // Accumulate consecutive limit values
-                    if (is_unsigned) {
-                        while (t == upper_limit) {
-                            value += t;
-                            i++;
-                            if (i >= data.size()) break;
-                            t = is_unsigned ? static_cast<int32_t>(data[i])
-                                : static_cast<int32_t>(static_cast<int8_t>(data[i]));
-                        }
-                    }
-                    else {
-                        while (t == upper_limit || t == lower_limit) {
-                            value += t;
-                            i++;
-                            if (i >= data.size()) break;
-                            t = static_cast<int32_t>(static_cast<int8_t>(data[i]));
-                        }
-                    }
-
-                    // Always add the final non-limit value (or 0 if ended on limit)
-                    if (i < data.size()) {
-                        value += t;
-                        i++;
-                    }
-                    result.push_back(value);
-                }
-            }
-            inline void decode_integer_packing_2bytes(const std::vector<uint8_t>& data,
-                const int32_t& byte_count, const bool& is_unsigned, std::vector<int32_t>& result)
-            {
-                // Determine the upper and lower limits for 16-bit values
-                const int32_t upper_limit = is_unsigned ? UINT16_MAX : INT16_MAX;
-                const int32_t lower_limit = is_unsigned ? 0 : INT16_MIN;
-
-                size_t i = 0;
-                while (i + 1 < data.size()) {
-                    int32_t value = 0;
-
-                    // Read first 16-bit value
-                    uint16_t raw_value = data[i] | (static_cast<uint16_t>(data[i + 1]) << 8);
-                    int32_t t;
-                    if (is_unsigned) {
-                        t = static_cast<int32_t>(raw_value);
-                    }
-                    else {
-                        t = static_cast<int32_t>(static_cast<int16_t>(raw_value));
-                    }
-
-                    // Accumulate consecutive limit values
-                    if (is_unsigned) {
-                        while (t == upper_limit) {
-                            value += t;
-                            i += 2;
-                            if (i + 1 >= data.size()) break;
-                            raw_value = data[i] | (static_cast<uint16_t>(data[i + 1]) << 8);
-                            t = static_cast<int32_t>(raw_value);
-                        }
-                    }
-                    else {
-                        while (t == upper_limit || t == lower_limit) {
-                            value += t;
-                            i += 2;
-                            if (i + 1 >= data.size()) break;
-                            raw_value = data[i] | (static_cast<uint16_t>(data[i + 1]) << 8);
-                            t = static_cast<int32_t>(static_cast<int16_t>(raw_value));
-                        }
-                    }
-
-                    // Always add the final non-limit value (or 0 if ended on limit)
-                    if (i + 1 < data.size()) {
-                        value += t;
-                        i += 2;
-                    }
-                    result.push_back(value);
-                }
-            }
-        }
         std::vector<int32_t> decode_integer_packing(const std::vector<uint8_t>&data,
             int32_t byte_count, bool is_unsigned) {
             // IntegerPacking decoder: unpacks integers from byte array
@@ -2077,8 +1817,6 @@ namespace msgpack {
             return result;
         }
 
-        namespace
-        {
             inline void decode_string_array_with_indices(const msgpack::object& data_encoding_obj, const msgpack::object& data, std::vector<int32_t>& indices)
             {
                 // Apply dataEncoding chain in reverse order
@@ -2236,7 +1974,6 @@ namespace msgpack {
                 }
                 offsets = result;
             }
-        }
         std::vector<std::string> decode_string_array(const msgpack::object & encoding, const msgpack::object & data) {
             // StringArray decoder: decodes string arrays
             if (encoding.type != msgpack::type::MAP) {
@@ -2614,8 +2351,6 @@ namespace msgpack {
         // Helper functions for building MessagePack structure (for writing)
         // =============================================================================
 
-        namespace
-        {
             struct AtomSiteCatogryEncodingData
             {
                 AtomSiteCatogryEncodingData(const size_t& natoms)
@@ -2760,8 +2495,7 @@ namespace msgpack {
                     }
                 }
             }
-        }
-        void encode_atom_site_category(msgpack::packer<msgpack::sbuffer>& pk, const Frame& frame) 
+        void encode_atom_site_category(msgpack::packer<msgpack::sbuffer>& pk, const Frame& frame)
         {
             AtomSiteCatogryEncodingData atom_site_data(frame.size());
 
@@ -2791,8 +2525,6 @@ namespace msgpack {
             encode_float_column(pk, "angle_gamma", {angles[2]});
         }
 
-        namespace
-        {
             struct SSRange {
                 std::string chain_id;
                 int32_t beg_seq_id;
@@ -2860,7 +2592,6 @@ namespace msgpack {
                 }
             }
 
-        }
         void encode_struct_conf_category(msgpack::packer<msgpack::sbuffer>& pk, const Frame& frame) {
 
             // Structure to hold secondary structure ranges
@@ -2912,8 +2643,6 @@ namespace msgpack {
             encode_integer_column(pk, "end_label_seq_id", end_label_seq_ids);
         }
 
-        namespace
-        {
             struct SheetRange {
                 std::string chain_id;
                 int32_t beg_seq_id;
@@ -2971,7 +2700,6 @@ namespace msgpack {
                     sheet_ranges.push_back({ current_chain, range_start, range_end });
                 }
             }
-        }
         void encode_struct_sheet_range_category(msgpack::packer<msgpack::sbuffer>& pk, const Frame& frame) {
 
             std::vector<SheetRange> sheet_ranges;
@@ -3131,8 +2859,6 @@ namespace msgpack {
             return;
         }
 
-        namespace
-        {
             struct EncodeStructConnData
             {
                 struct LinkPartner
@@ -3321,7 +3047,6 @@ namespace msgpack {
                 encode_string_column(pk, "ptnr2_label_atom_id", struct_conn_data.ptnr2.label_atom_ids);
                 encode_string_column(pk, "pdbx_value_order",    struct_conn_data.pdbx_value_orders);
             }
-        }
         void encode_struct_conn_category(msgpack::packer<msgpack::sbuffer>& pk, const Frame& frame) {
             const auto& bonds = frame.topology().bonds();
 
@@ -3379,8 +3104,6 @@ namespace msgpack {
             pk.pack("type");  pk.pack(33);  // Float64 type code
         }
 
-        namespace
-        {
             inline void pack_offset_binary(msgpack::packer<msgpack::sbuffer>& pk, std::vector<uint8_t>& offsets_binary)
             {
                 int32_t offset_byte_count = 4;
@@ -3400,22 +3123,6 @@ namespace msgpack {
                 pk.pack_bin(static_cast<uint32_t>(offsets_binary.size()));
                 pk.pack_bin_body(reinterpret_cast<const char*>(offsets_binary.data()), static_cast<uint32_t>(offsets_binary.size()));
             }
-            inline void build_encode_string_data(const std::vector<std::string>& data, std::string& string_data)
-            {
-                // Build string data (concatenated unique strings)
-                std::vector<std::string> unique_strings;
-                std::map<std::string, int32_t> string_to_index;
-                for (const auto& str : data) {
-                    if (string_to_index.find(str) == string_to_index.end()) {
-                        string_to_index[str] = static_cast<int32_t>(unique_strings.size());
-                        unique_strings.push_back(str);
-                    }
-                }
-                for (const auto& str : unique_strings) {
-                    string_data += str;
-                }
-            }
-        }
         void encode_string_column(msgpack::packer<msgpack::sbuffer>& pk,
             const std::string& column_name, const std::vector<std::string>& data) {
             // Column map: { name, mask, data }
@@ -3613,8 +3320,6 @@ namespace chemfiles
         read(frame);
     }
 
-    namespace
-    {
         struct DataProfile
         {
             DataProfile(const BCIFFormat::BCIFData& data)
@@ -3690,35 +3395,6 @@ namespace chemfiles
             }
         }
         using AtomIndex = size_t;
-        // Helper function to check if a residue is a nucleotide (RNA or DNA)
-        inline bool is_nucleotide(const std::string& residue_name) {
-             return (residue_name == "A" || residue_name == "C" || residue_name == "G" || residue_name == "U" ||
-                    residue_name == "DA" || residue_name == "DC" || residue_name == "DG" || residue_name == "DT");
-        }
-        inline bool is_aminoacide(const std::string& residue_name) {
-            return
-                residue_name == "ALA" ||
-                residue_name == "ARG" ||
-                residue_name == "ASN" ||
-                residue_name == "ASP" ||
-                residue_name == "CYS" ||
-                residue_name == "GLN" ||
-                residue_name == "GLU" ||
-                residue_name == "GLY" ||
-                residue_name == "HIS" ||
-                residue_name == "ILE" ||
-                residue_name == "LEU" ||
-                residue_name == "LYS" ||
-                residue_name == "MET" ||
-                residue_name == "PHE" ||
-                residue_name == "PRO" ||
-                residue_name == "SER" ||
-                residue_name == "THR" ||
-                residue_name == "TRP" ||
-                residue_name == "TYR" ||
-                residue_name == "VAL"
-                ;
-        }
 
         inline void create_intra_residue_bonds(const BCIFFormat::BCIFData::ChemCompMap& chemcomp_map, const std::string& resname, const std::map<BCIFFormat::BCIFData::AtomName, AtomIndex>& atoms, Frame& frame)
         {
@@ -3749,14 +3425,6 @@ namespace chemfiles
             }
 
         }
-        inline bool is_residue_forward_binder(const std::string& atomName)
-        {
-            return atomName == "C" || atomName == "O3'";
-        }
-        inline bool is_residue_backward_binder(const std::string& atomName)
-        {
-            return atomName == "N" || atomName == "P";
-        }
         inline size_t get_inter_residue_binder(const std::map<BCIFFormat::BCIFData::AtomName, AtomIndex>& atoms)
         {
             for (auto& [it_atomName, it_atomIndex] : atoms)
@@ -3764,17 +3432,8 @@ namespace chemfiles
                 if (is_residue_forward_binder(it_atomName))
                     return it_atomIndex;
             }
-            return 0xffffffffffffffff;
+            return SIZE_MAX;
         }
-        inline bool expect_implicit_inter_residue_bonding(const std::string& res_name)
-        {
-            return (is_nucleotide(res_name) || is_aminoacide(res_name));
-        }
-        // Check if residue data matches the placeholder pattern used for atoms without residues
-        inline bool is_placeholder_residue_data(const std::string& res_name, int32_t res_id, const std::string& chain_id) {
-            return res_name == "UNK" && res_id == 1 && chain_id == "A";
-        }
-
         inline void create_residue(
             const BCIFFormat::BCIFData& data,
             Frame& frame,
@@ -3792,7 +3451,7 @@ namespace chemfiles
             // These are atoms that didn't belong to any residue in the original file
             if (is_placeholder_residue_data(res_name, res_id, data.chain_id[last_index])) {
                 previous_inter_residue_forward_linking_atom = current_inter_residue_forward_linking_atom;
-                current_inter_residue_forward_linking_atom = 0xffffffffffffffff;
+                current_inter_residue_forward_linking_atom = SIZE_MAX;
                 return;
             }
 
@@ -3811,7 +3470,7 @@ namespace chemfiles
             frame.add_residue(std::move(residue));
 
             previous_inter_residue_forward_linking_atom = current_inter_residue_forward_linking_atom;
-            current_inter_residue_forward_linking_atom = 0xffffffffffffffff;
+            current_inter_residue_forward_linking_atom = SIZE_MAX;
 
         }
         inline void fill_atomistic_data(const BCIFFormat::BCIFData& data, const DataProfile& profile, Frame& frame)
@@ -3823,8 +3482,8 @@ namespace chemfiles
 
             std::map<BCIFFormat::BCIFData::StructConnMapKey, AtomIndex> atoms_waiting_for_struct_conn_bounding;
             std::map<BCIFFormat::BCIFData::AtomName, AtomIndex> atoms_waiting_for_residue_data;
-            size_t previous_inter_residue_forward_linking_atom = 0xffffffffffffffff;
-            size_t current_inter_residue_forward_linking_atom = 0xffffffffffffffff;
+            size_t previous_inter_residue_forward_linking_atom = SIZE_MAX;
+            size_t current_inter_residue_forward_linking_atom = SIZE_MAX;
             bool just_changed_chain = false;
             bool just_changed_residue = false;
 
@@ -3865,7 +3524,7 @@ namespace chemfiles
                 if (just_changed_chain)
                 {
                     // we don't bound residues from different chains
-                    previous_inter_residue_forward_linking_atom = 0xffffffffffffffff;
+                    previous_inter_residue_forward_linking_atom = SIZE_MAX;
                     just_changed_chain = false;
                 }
 
@@ -3905,9 +3564,9 @@ namespace chemfiles
                     continue;
 
                 bool current_residue_has_implicit_neightbour_bonding = expect_implicit_inter_residue_bonding(*res_name);
-                if (current_inter_residue_forward_linking_atom == 0xffffffffffffffff && current_residue_has_implicit_neightbour_bonding && is_residue_forward_binder(atom_name))
+                if (current_inter_residue_forward_linking_atom == SIZE_MAX && current_residue_has_implicit_neightbour_bonding && is_residue_forward_binder(atom_name))
                     current_inter_residue_forward_linking_atom = it_atomIndex;
-                if (current_residue_has_implicit_neightbour_bonding && is_residue_backward_binder(atom_name) && previous_inter_residue_forward_linking_atom != 0xffffffffffffffff)
+                if (current_residue_has_implicit_neightbour_bonding && is_residue_backward_binder(atom_name) && previous_inter_residue_forward_linking_atom != SIZE_MAX)
                 {
                     frame.add_bond(previous_inter_residue_forward_linking_atom, it_atomIndex, Bond::SINGLE);
                 }
@@ -3915,7 +3574,7 @@ namespace chemfiles
                 // We create implicit bound between contiguous residues
                 if (res_name != nullptr
                     && (*res_name == "N" || *res_name == "P")
-                    && previous_inter_residue_forward_linking_atom != 0xffffffffffffffff
+                    && previous_inter_residue_forward_linking_atom != SIZE_MAX
                     && current_residue_has_implicit_neightbour_bonding
                     )
                 {
@@ -3947,7 +3606,6 @@ namespace chemfiles
             }
         }
 
-    }
     void BCIFFormat::read(Frame& frame) {
         if (!decoded_) {
             throw file_error("the BCIF file has not been decoded");
