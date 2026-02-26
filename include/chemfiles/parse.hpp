@@ -20,6 +20,14 @@ namespace chemfiles {
 /// a valid `T`.
 template<typename T> T parse(std::string_view input);
 
+// Forward-declare explicit specializations before detail namespace so the
+// compiler knows not to instantiate the primary template for these types.
+// Required by C++20 [temp.expl.spec] rules (stricter than C++17).
+template<> std::string parse(std::string_view input);
+template<> double parse(std::string_view input);
+template<> int64_t parse(std::string_view input);
+template<> uint64_t parse(std::string_view input);
+
 namespace detail {
     /// Helper for the static_assert below
     template<typename T>

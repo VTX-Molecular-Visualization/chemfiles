@@ -23,10 +23,10 @@ void send_warning(const std::string& message) noexcept;
 template<typename... Args>
 void warning(std::string context, const char* message, Args &&... arguments) {
     if (context.empty()) {
-        send_warning(fmt::format(message, std::forward<Args>(arguments)...));
+        send_warning(fmt::format(fmt::runtime(message), std::forward<Args>(arguments)...));
     } else {
         context += ": ";
-        fmt::format_to(std::back_inserter(context), message, std::forward<Args>(arguments)...);
+        fmt::format_to(std::back_inserter(context), fmt::runtime(message), std::forward<Args>(arguments)...);
         send_warning(context);
     }
 }
