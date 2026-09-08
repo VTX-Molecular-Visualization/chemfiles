@@ -5,12 +5,12 @@ from conan.tools.scm import Git
 
 class ChemfilesRecipe(ConanFile):
     name = "chemfiles"
-    version = "2026.02.5" # year and month of the last chemfiles merge + fork modification number
+    version = "2026.05.6" # year and month of the last chemfiles merge + fork modification number
     package_type = "library"
     
     settings = "os", "compiler", "build_type", "arch"
-    options = {"shared": [True, False], "fPIC": [True, False]}
-    default_options = {"shared": False, "fPIC": True}
+    options = {"shared": [True, False], "fPIC": [True, False], "tests": [True, False]}
+    default_options = {"shared": False, "fPIC": True, "tests": False}
     
     generators = "CMakeDeps", "CMakeToolchain"
     
@@ -27,7 +27,10 @@ class ChemfilesRecipe(ConanFile):
         
     def build(self):
         cmake = CMake(self)
-        cmake.configure()
+        args = {}
+        if self.options.tests:
+            args["CHFL_BUILD_TESTS"] = "ON"
+        cmake.configure(args)
         cmake.build()
 
     def package(self):
